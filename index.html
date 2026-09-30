@@ -19,17 +19,17 @@ button.on{background:var(--ink);color:var(--bg)}
 #tools .sp{flex:1}
 #table{flex:1;position:relative;overflow:auto;background:var(--tbl);touch-action:pan-x pan-y}
 #canvas{position:relative;width:2400px;height:2400px}
-@media(max-width:700px),(max-height:500px) and (max-width:1000px){#canvas{width:100%!important}#table{overflow-x:hidden}.s{width:140px}.s.big{width:200px}#tools button,#bar button{padding:5px 8px}}
-.s{position:absolute;z-index:2;width:150px;min-height:90px;padding:8px;border-radius:4px;box-shadow:0 2px 6px #0004;color:#222;touch-action:none;cursor:grab}
+.s{position:absolute;z-index:2;width:max-content;min-width:110px;max-width:220px;padding:8px 10px 22px;border-radius:4px;box-shadow:0 2px 6px #0004;color:#222;touch-action:none;cursor:grab}
 .s.drag{cursor:grabbing;box-shadow:0 8px 18px #0006;z-index:9999}
 .s.tgt{outline:3px dashed #e55}
-.s .t{white-space:pre-wrap;word-break:break-word;outline:none;min-height:60px;user-select:text}
+.s .t{white-space:pre-wrap;word-break:break-word;outline:none;min-height:1.3em;user-select:text}
 .grp{position:absolute;z-index:1;border:2px solid #b5655a;border-radius:38% 42% 40% 44%/44% 40% 42% 38%;background:#b5655a14;touch-action:none;cursor:grab}
 .gn{position:absolute;left:50%;top:-16px;transform:translateX(-50%);background:var(--bg);border:2px solid #b5655a;border-radius:99px;padding:2px 12px;font-size:12px;letter-spacing:.06em;white-space:nowrap;min-width:70px;text-align:center;outline:none;user-select:text;cursor:text}
 .gn:empty:before{content:attr(data-ph);opacity:.5}
 .s .x{position:absolute;right:2px;bottom:0;opacity:.5;font-size:12px}
-.s.big{width:250px}.s.big .t{font-size:18px}
+.s.big{max-width:300px}.s.big .t{font-size:18px}
 .dots{position:absolute;left:4px;bottom:4px;display:flex;gap:3px}
+@media(max-width:700px),(max-height:500px) and (max-width:1000px){#canvas{width:100%!important}#table{overflow-x:hidden}.s{max-width:170px}.s.big{max-width:230px}#tools button,#bar button{padding:5px 8px}}
 .dots i{width:10px;height:10px;border-radius:50%;border:1px solid #0004;display:inline-block}
 dialog{border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--ink);max-width:90vw;width:380px}
 dialog li{display:flex;gap:6px;margin:6px 0;align-items:center}dialog li span{flex:1;white-space:pre-wrap;word-break:break-word}
@@ -74,7 +74,7 @@ onAuthStateChanged(auth,u=>{
     boards={};snap.forEach(d=>boards[d.id]={id:d.id,...d.data()});
     if(!Object.keys(boards).length){await newBoard('Board 1');return}
     if(!boards[cur])cur=sortedBoards()[0].id;
-    if(!dragging)render();
+    if(!dragging&&!editing())render();
   });
 });
 const ref=id=>doc(db,'users',user.uid,'boards',id);
@@ -96,32 +96,44 @@ const put=(id,s,undo=true)=>commit([[id,s]],undo);
 const gOf=(b,s)=>s&&s.g&&!s.bin&&b.groups?.[s.g]?s.g:null;
 const PAD=40;
 const cvEl=id=>$('#canvas').querySelector(`[data-id="${id}"]`);
-// Each device class keeps its own layout: desktop uses x,y; phones (<=700px) use mx,my.
+const editing=()=>!!document.activeElement?.closest?.('.t,.gn');
+addEventListener('pagehide',()=>document.activeElement?.blur?.());
+document.addEventListener('visibilitychange',()=>document.hidden&&document.activeElement?.blur?.());
+// Each device class keeps its own layout: desktop uses x,y; phones use qx,qy.
 const mob=()=>innerWidth<=700||(innerHeight<=500&&innerWidth<=1000);
-const PK=()=>mob()?['mx','my']:['x','y'];
+const PK=()=>mob()?['qx','qy']:['x','y'];
 const px=s=>{const[k,l]=PK();return[s[k]??0,s[l]??0]};
 const setPos=(s,x,y)=>{const[k,l]=PK();return{...s,[k]:Math.round(x),[l]:Math.round(y)}};
 const clampX=(x,d)=>Math.max(0,mob()?Math.min(x,$('#table').clientWidth-d.offsetWidth-4):x);
-// scraps with no position on this device class get a tidy grid slot (groups kept together, starting a new row)
-function autoPlace(b){
-  const [kx,ky]=PK(),M=mob(),step=M?148:165,x0=40,rh=M?130:120;
-  const cols=Math.max(M?2:3,Math.floor((($('#table').clientWidth||900)-x0)/step));
-  const gid=s=>s.g&&b.groups?.[s.g]?s.g:'';
-  const miss=Object.entries(b.scraps||{}).filter(([,s])=>s&&!s.bin&&s[kx]==null);
+// scraps with no position on this device class are placed into free space, measured so nothing overlaps; groups stay together
+function pack(b){
+  const [kx,ky]=PK(),W=$('#table').clientWidth,M=14,upd={},R=[];
+  const miss=Object.entries(b.scraps).filter(([,s])=>s&&!s.bin&&s[kx]==null).sort((a,c)=>(a[1].ts||0)-(c[1].ts||0));
   if(!miss.length)return;
-  let y0=30;Object.values(b.scraps).forEach(s=>{if(s&&!s.bin&&s[kx]!=null)y0=Math.max(y0,s[ky]+rh)});
-  miss.sort((a,c)=>(gid(a[1])>gid(c[1])?1:gid(a[1])<gid(c[1])?-1:0)||(a[1].ts||0)-(c[1].ts||0));
-  let col=0,row=0,last='',upd={};
-  miss.forEach(([id,s])=>{const g=gid(s);
-    if(g!==last){if(col>0){row++;col=0}if(g)row+=.5;last=g}
-    const x=x0+col*step,y=Math.round(y0+row*rh);b.scraps[id]={...s,[kx]:x,[ky]:y};
-    upd['scraps.'+id+'.'+kx]=x;upd['scraps.'+id+'.'+ky]=y;
-    if(++col>=cols){col=0;row++}});
+  const skip=new Set(miss.map(([id])=>id)),gb={};
+  Object.entries(b.scraps).forEach(([id,s])=>{const n=!skip.has(id)&&s&&!s.bin&&cvEl(id);if(!n)return;
+    const r={x:n.offsetLeft,y:n.offsetTop,w:n.offsetWidth,h:n.offsetHeight};R.push(r);const g=gOf(b,s);
+    if(g){const o=gb[g]??={x1:1e9,y1:1e9,x2:-1e9,y2:-1e9};o.x1=Math.min(o.x1,r.x);o.y1=Math.min(o.y1,r.y);o.x2=Math.max(o.x2,r.x+r.w);o.y2=Math.max(o.y2,r.y+r.h)}});
+  Object.values(gb).forEach(o=>R.push({x:o.x1-PAD,y:o.y1-PAD-16,w:o.x2-o.x1+2*PAD,h:o.y2-o.y1+2*PAD+16}));
+  const free=(w,h,y0)=>{for(let y=Math.max(16,y0);;y+=16)for(let x=16;x===16||x+w<=W-16;x+=16)
+    if(!R.some(r=>x<r.x+r.w+M&&x+w+M>r.x&&y<r.y+r.h+M&&y+h+M>r.y))return[x,y]};
+  const set=(id,x,y)=>{const n=cvEl(id);n.style.left=x+'px';n.style.top=y+'px';b.scraps[id]={...b.scraps[id],[kx]:x,[ky]:y};
+    upd['scraps.'+id+'.'+kx]=x;upd['scraps.'+id+'.'+ky]=y};
+  const top=$('#table').scrollTop,gm={},singles=[];
+  miss.forEach(([id,s])=>{const g=gOf(b,s);g&&!gb[g]?(gm[g]??=[]).push(id):singles.push(id)});
+  Object.values(gm).forEach(ids=>{ // whole group new here: lay members out in wrapped rows inside one outline
+    const inner=Math.max(160,W-2*PAD-32);let cx=0,cy=0,rh=0,cw=0;const pos=[];
+    ids.forEach(id=>{const n=cvEl(id),w=n.offsetWidth,h=n.offsetHeight;if(cx&&cx+w>inner){cx=0;cy+=rh+12;rh=0}
+      pos.push([id,cx,cy]);cx+=w+12;cw=Math.max(cw,cx-12);rh=Math.max(rh,h)});
+    const w=cw+2*PAD,h=cy+rh+2*PAD+16,[X,Y]=free(w,h,top);R.push({x:X,y:Y,w,h});
+    pos.forEach(([id,x,y])=>set(id,X+PAD+x,Y+16+PAD+y))});
+  singles.forEach(id=>{const n=cvEl(id),g=gOf(b,b.scraps[id]),w=n.offsetWidth,h=n.offsetHeight;
+    const[x,y]=free(w,h,g&&gb[g]?gb[g].y1:top);R.push({x,y,w,h});set(id,x,y)});
   updateDoc(ref(cur),upd);
 }
 
 function render(){
-  const b=B();if(!b)return;autoPlace(b);
+  const b=B();if(!b)return;
   $('#bar').innerHTML='';
   sortedBoards().forEach(x=>{const e=document.createElement('button');e.textContent=x.name;e.className=x.id===cur?'on':'';
     e.onclick=()=>{cur=x.id;localStorage.cur=cur;render()};$('#bar').append(e)});
@@ -132,6 +144,7 @@ function render(){
   const cv=$('#canvas');cv.innerHTML='';
   const shown=all.filter(([,s])=>!!s.bin===showBin),gs={};
   shown.forEach(([id,s])=>{cv.append(el(id,s));const g=!showBin&&gOf(b,s);if(g)(gs[g]??=[]).push(id)});
+  if(!showBin)pack(b);
   Object.entries(gs).forEach(([g,ids])=>cv.append(gEl(g,ids)));
   const bot=Math.max(0,...[...cv.children].map(n=>n.offsetTop+n.offsetHeight));
   cv.style.height=Math.max($('#table').clientHeight,bot+260)+'px';
@@ -157,7 +170,8 @@ function gEl(gid,ids){
   const L=bb.x1-PAD,T=bb.y1-PAD;
   g.style.cssText=`left:${L}px;top:${T}px;width:${bb.x2-bb.x1+2*PAD}px;height:${bb.y2-bb.y1+2*PAD}px`;
   const nm=document.createElement('div');nm.className='gn';nm.contentEditable=true;nm.dataset.ph='name this';nm.textContent=b.groups[gid].name||'';
-  nm.onblur=()=>{const v=nm.textContent.trim();if(b.groups[gid]&&v!==(b.groups[gid].name||'')){b.groups[gid].name=v;updateDoc(ref(cur),{['groups.'+gid+'.name']:v})}};
+  let nt;nm.oninput=()=>{clearTimeout(nt);nt=setTimeout(()=>{const v=nm.textContent.trim();if(b.groups[gid]){b.groups[gid].name=v;updateDoc(ref(cur),{['groups.'+gid+'.name']:v})}},500)};
+  nm.onblur=()=>{clearTimeout(nt);const v=nm.textContent.trim();if(b.groups[gid]&&v!==(b.groups[gid].name||'')){b.groups[gid].name=v;updateDoc(ref(cur),{['groups.'+gid+'.name']:v})}render()};
   nm.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();nm.blur()}};
   g.append(nm);
   g.onpointerdown=e=>{
@@ -174,7 +188,10 @@ function el(id,s){
   const d=document.createElement('div');d.className='s'+(s.big?' big':'');d.dataset.id=id;
   d.style.cssText+=`left:${px(s)[0]}px;top:${px(s)[1]}px;background:${s.c};transform:rotate(${(id.charCodeAt(0)%5-2)}deg)`;
   const t=document.createElement('div');t.className='t';t.contentEditable=!s.bin;t.textContent=s.t||'';
-  t.onblur=()=>{if(t.textContent!==(s.t||''))put(id,{...B().scraps[id],t:t.textContent})};
+  // text saves while typing (debounced) so closing the tab loses nothing; one undo step per edit session
+  let tt,orig;t.onfocus=()=>{orig=B().scraps[id]};
+  t.oninput=()=>{clearTimeout(tt);tt=setTimeout(()=>{const c=B().scraps[id];if(c){c.t=t.textContent;updateDoc(ref(cur),{['scraps.'+id+'.t']:c.t})}},500)};
+  t.onblur=()=>{clearTimeout(tt);const c=B().scraps[id];if(c&&orig&&t.textContent!==(orig.t||'')){history.push({b:cur,ops:[{id,prev:orig}]});put(id,{...c,t:t.textContent},false)}render()};
   d.append(t);
   const dots=document.createElement('div');dots.className='dots';
   COLORS.forEach(c=>{const i=document.createElement('i');i.style.background=c;i.onclick=e=>{e.stopPropagation();put(id,{...B().scraps[id],c})};dots.append(i)});
@@ -197,7 +214,7 @@ function drop(id,d,dx,dy){
     const tid=h.dataset.id,t=b.scraps[tid],ch=[];let gid=gOf(b,t);
     if(!gid){gid=uid8();b.groups??={};b.groups[gid]={name:''};updateDoc(ref(cur),{['groups.'+gid]:{name:''}});ch.push([tid,{...t,g:gid}])}
     b.scraps[tid]={...t,g:gid};const bb=gbox(gid,id);
-    ch.push([id,setPos({...s,g:gid},bb.x2+16,px(t)[1])]);commit(ch);
+    const fit=!mob()||bb.x2+16+d.offsetWidth<=$('#table').clientWidth-8;ch.push([id,setPos({...s,g:gid},fit?bb.x2+16:bb.x1,fit?px(t)[1]:bb.y2+12)]);commit(ch);
   }else{ // otherwise: is its centre inside a group's outline?
     const cx=nx+d.offsetWidth/2,cy=ny+d.offsetHeight/2;let g=null;
     Object.keys(b.groups||{}).forEach(gid=>{const bb=gbox(gid,id);if(bb&&cx>bb.x1-PAD&&cx<bb.x2+PAD&&cy>bb.y1-PAD&&cy<bb.y2+PAD)g=gid});
@@ -209,7 +226,7 @@ function hit(d){const r=d.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r
   return [...document.querySelectorAll('.s')].find(n=>n!==d&&(rr=>cx>rr.left&&cx<rr.right&&cy>rr.top&&cy<rr.bottom)(n.getBoundingClientRect()))}
 
 $('#add').onclick=()=>{const tb=$('#table');const id=uid8();showBin=false;
-  put(id,setPos({t:'',c:COLORS[Math.random()*5|0]},tb.scrollLeft+40+Math.random()*60,tb.scrollTop+30+Math.random()*80));render();
+  put(id,{t:"",c:COLORS[Math.random()*5|0]});render();
   setTimeout(()=>document.querySelector(`[data-id="${id}"] .t`)?.focus(),0)};
 $('#undo').onclick=()=>{const h=history.pop();if(!h||h.b!==cur)return;commit(h.ops.map(o=>[o.id,o.prev]),false);render()};
 $('#bin').onclick=()=>{showBin=!showBin;render()};
