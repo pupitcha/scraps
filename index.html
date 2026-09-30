@@ -105,21 +105,47 @@ const gOf=(b,s)=>s&&s.g&&!s.bin&&b.groups?.[s.g]?s.g:null;
 const PAD=40;
 const cvEl=id=>$('#canvas').querySelector(`[data-id="${id}"]`);
 const editing=()=>!!document.activeElement?.closest?.('.t,.gn');
-// floating B/I/U bar: sits just above the keyboard while a scrap is being edited (never covered by the iOS keyboard or selection menu)
-const fbar=$('#fbar');let fid=null;
+// Rich text: notes keep an HTML copy (s.h) limited to <b> <i> <u> <br>; s.t stays the plain text.
+const esc=t=>t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const t2h=t=>esc(t||'').replace(/\n/g,'<br>');
+const hOf=s=>s.h!=null?s.h:t2h(s.t);
+function ser(root){ // DOM -> sanitized html
+  let o='';
+  const walk=(n,st)=>{
+    if(n.nodeType===3){o+=esc(n.nodeValue);return}
+    if(n.nodeType!==1)return;
+    const tg=n.tagName.toLowerCase(),sy=n.style||{};
+    if(tg==='br'){o+='<br>';return}
+    const blk=tg==='div'||tg==='p';
+    if(blk&&o&&!o.endsWith('<br>'))o+='<br>';
+    const tags=[];
+    if(tg==='b'||tg==='strong'||+sy.fontWeight>=600||sy.fontWeight==='bold')tags.push('b');
+    if(tg==='i'||tg==='em'||sy.fontStyle==='italic')tags.push('i');
+    if(tg==='u'||(sy.textDecoration||sy.textDecorationLine||'').includes('underline'))tags.push('u');
+    tags.forEach(x=>o+='<'+x+'>');n.childNodes.forEach(c=>walk(c));tags.reverse().forEach(x=>o+='</'+x+'>');
+  };
+  root.childNodes.forEach(c=>walk(c));
+  o=o.replace(/<(b|i|u)><\/\1>/g,'');
+  const div=document.createElement('div');div.innerHTML=o;
+  return{h:o,t:div.innerHTML.replace(/<br>/g,'\n').replace(/<[^>]+>/g,'').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&')};
+}
+const clean=h=>{const d=document.createElement('div');d.innerHTML=h;return ser(d).h};
+
+// floating B/I/U bar: sits just above the keyboard while a scrap is being edited; formats only the selected text
+const fbar=$('#fbar');let saveCur=null;
+const CMD={b:'bold',i:'italic',u:'underline'};
 function fbarPlace(){const v=window.visualViewport;if(!v||fbar.classList.contains('hide'))return;
   fbar.style.top=(v.offsetTop+v.height-fbar.offsetHeight-10)+'px'}
-function fbarShow(){const c=B()?.scraps[fid];if(!c)return;
-  fbar.querySelectorAll('b').forEach(b=>b.classList.toggle('on',!!c[b.dataset.k]));fbar.classList.remove('hide');fbarPlace()}
+function fbarState(){fbar.querySelectorAll('b').forEach(b=>b.classList.toggle('on',document.queryCommandState(CMD[b.dataset.k])))}
 document.addEventListener('focusin',e=>{const t=e.target.closest?.('.t');
-  if(t&&t.isContentEditable){fid=t.closest('.s').dataset.id;fbarShow()}});
+  if(t&&t.isContentEditable){fbar.classList.remove('hide');fbarPlace();fbarState()}});
 document.addEventListener('focusout',()=>setTimeout(()=>{if(!document.activeElement?.closest?.('.t'))fbar.classList.add('hide')},120));
+document.addEventListener('selectionchange',()=>{if(document.activeElement?.closest?.('.t'))fbarState()});
 visualViewport?.addEventListener('resize',fbarPlace);visualViewport?.addEventListener('scroll',fbarPlace);
-fbar.onmousedown=e=>e.preventDefault();fbar.ontouchstart=e=>e.preventDefault();  // keep the text focused/selected
-fbar.onclick=e=>{const k=e.target.dataset?.k,c=B()?.scraps[fid];if(!k||!c)return;
-  const v=!c[k];c[k]=v;                                   // instant: flip the class in place, no re-render
-  cvEl(fid)?.querySelector('.t').classList.toggle(k,v);e.target.classList.toggle('on',v);
-  updateDoc(ref(cur),{['scraps.'+fid+'.'+k]:v,['scraps.'+fid+'.ts']:Date.now()})};
+fbar.addEventListener('touchstart',e=>e.preventDefault(),{passive:false}); // keep focus + selection on touch
+fbar.addEventListener('pointerdown',e=>{e.preventDefault();const k=e.target.dataset?.k;
+  if(!k||!document.activeElement?.closest?.('.t'))return;
+  document.execCommand(CMD[k]);fbarState();saveCur&&saveCur()});
 addEventListener('pagehide',()=>document.activeElement?.blur?.());
 document.addEventListener('visibilitychange',()=>document.hidden&&document.activeElement?.blur?.());
 document.fonts?.ready.then(()=>{if(user&&B()&&!dragging&&!editing())render()});
@@ -212,11 +238,16 @@ function gEl(gid,ids){
 function el(id,s){
   const d=document.createElement('div');d.className='s'+(s.big?' big':'');d.dataset.id=id;
   d.style.cssText+=`left:${px(s)[0]}px;top:${px(s)[1]}px;background:${s.c};transform:rotate(${(id.charCodeAt(0)%5-2)}deg)`;
-  const t=document.createElement('div');t.className='t'+(s.b?' b':'')+(s.i?' i':'')+(s.u?' u':'');t.contentEditable=!s.bin;t.textContent=s.t||'';
-  // text saves while typing (debounced) so closing the tab loses nothing; one undo step per edit session
-  let tt,orig;t.onfocus=()=>{orig=B().scraps[id]};
-  t.oninput=()=>{clearTimeout(tt);tt=setTimeout(()=>{const c=B().scraps[id];if(c){c.t=t.textContent;updateDoc(ref(cur),{['scraps.'+id+'.t']:c.t})}},500)};
-  t.onblur=()=>{clearTimeout(tt);const c=B().scraps[id];if(c&&orig&&t.textContent!==(orig.t||'')){history.push({b:cur,ops:[{id,prev:orig}]});put(id,{...c,t:t.textContent},false)}if(!dragging)render()};
+  const t=document.createElement('div');t.className='t'+(s.b?' b':'')+(s.i?' i':'')+(s.u?' u':'');t.contentEditable=!s.bin;t.innerHTML=clean(hOf(s));
+  // saves while typing/formatting (debounced) so closing the tab loses nothing; one undo step per edit session
+  let tt,orig;t.onfocus=()=>{orig=B().scraps[id];saveCur=save};
+  t.onpaste=e=>{e.preventDefault();document.execCommand('insertText',false,e.clipboardData.getData('text/plain'))};
+  function save(){clearTimeout(tt);const c=B().scraps[id];if(!c)return;const r=ser(t);c.t=r.t;c.h=r.h;
+    updateDoc(ref(cur),{['scraps.'+id+'.t']:r.t,['scraps.'+id+'.h']:r.h,['scraps.'+id+'.ts']:Date.now()})}
+  t.oninput=()=>{clearTimeout(tt);tt=setTimeout(save,500)};
+  t.onblur=()=>{clearTimeout(tt);const c=B().scraps[id];
+    if(c&&orig){const r=ser(t);if(r.h!==clean(hOf(orig))){history.push({b:cur,ops:[{id,prev:orig}]});put(id,{...c,t:r.t,h:r.h},false)}}
+    if(!dragging)render()};
   d.append(t);
   const dots=document.createElement('div');dots.className='dots';
   COLORS.forEach(c=>{const i=document.createElement('i');i.style.background=c;i.onclick=e=>{e.stopPropagation();put(id,{...B().scraps[id],c})};dots.append(i)});
