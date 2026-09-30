@@ -21,7 +21,7 @@ button.on{background:var(--ink);color:var(--bg)}
 #tools .sp{flex:1}
 #table{flex:1;position:relative;overflow:auto;background:var(--tbl);touch-action:pan-x pan-y}
 #canvas{position:relative;width:2400px;height:2400px}
-.s{position:absolute;z-index:2;width:max-content;min-width:150px;max-width:220px;padding:8px 10px 22px;border-radius:4px;box-shadow:0 2px 6px #0004;color:#222;touch-action:none;cursor:grab}
+.s{position:absolute;z-index:2;width:max-content;min-width:110px;max-width:220px;padding:8px 10px 22px;border-radius:4px;box-shadow:0 2px 6px #0004;color:#222;touch-action:none;cursor:grab}
 .s.drag{cursor:grabbing;box-shadow:0 8px 18px #0006;z-index:9999}
 .s.tgt{outline:3px dashed #e55}
 .s .t{white-space:pre-wrap;word-break:break-word;outline:none;line-height:1.5;min-height:1.3em;user-select:text}
@@ -33,10 +33,10 @@ button.on{background:var(--ink);color:var(--bg)}
 .dots{position:absolute;left:4px;bottom:4px;display:flex;gap:3px}
 @media(max-width:700px),(max-height:500px) and (max-width:1000px){#canvas{width:100%!important}#table{overflow-x:hidden}.s{max-width:170px}.s.big{max-width:230px}#tools button,#bar button{padding:5px 8px}}
 .dots i{width:10px;height:10px;border-radius:50%;border:1px solid #0004;display:inline-block}
+#fbar{position:fixed;left:50%;transform:translateX(-50%);z-index:10000;display:flex;gap:6px;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:5px 8px;box-shadow:0 4px 14px #0003}
+#fbar b{width:40px;height:34px;line-height:34px;text-align:center;font:700 16px 'DM Sans',sans-serif;border-radius:8px;cursor:pointer;user-select:none;-webkit-user-select:none}
+#fbar b.on{background:var(--ink);color:var(--bg)}
 #login,dialog h3{font-weight:200;text-transform:uppercase;letter-spacing:.08em}
-.fmt{position:absolute;right:20px;bottom:2px;display:flex;gap:2px}
-.fmt b{font:700 12px 'DM Sans',sans-serif;width:18px;height:18px;line-height:18px;text-align:center;border-radius:4px;cursor:pointer;opacity:.55;user-select:none}
-.fmt b.on{opacity:1;background:#0002}
 .t.b{font-weight:700}.t.i{font-style:italic}.t.u{text-decoration:underline}
 dialog{font-family:"DM Sans","IBM Plex Sans Thai",sans-serif;font-weight:200;text-transform:uppercase;letter-spacing:.06em;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--ink);max-width:90vw;width:380px}
 dialog li{display:flex;gap:6px;margin:6px 0;align-items:center}dialog li span{flex:1;white-space:pre-wrap;word-break:break-word}
@@ -55,6 +55,7 @@ dialog li{display:flex;gap:6px;margin:6px 0;align-items:center}dialog li span{fl
   <div id="table"><div id="canvas"></div></div>
 </div>
 <div id="login" class="hide"><h2>Scraps</h2><p id="lmsg">Sign in to sync.</p><button id="gbtn">Sign in with Google</button></div>
+<div id="fbar" class="hide"><b data-k="b">B</b><b data-k="i" style="font-style:italic">I</b><b data-k="u" style="text-decoration:underline">U</b></div>
 <dialog id="dlg"></dialog>
 <script type="module">
 import {firebaseConfig} from './config.js';
@@ -104,6 +105,21 @@ const gOf=(b,s)=>s&&s.g&&!s.bin&&b.groups?.[s.g]?s.g:null;
 const PAD=40;
 const cvEl=id=>$('#canvas').querySelector(`[data-id="${id}"]`);
 const editing=()=>!!document.activeElement?.closest?.('.t,.gn');
+// floating B/I/U bar: sits just above the keyboard while a scrap is being edited (never covered by the iOS keyboard or selection menu)
+const fbar=$('#fbar');let fid=null;
+function fbarPlace(){const v=window.visualViewport;if(!v||fbar.classList.contains('hide'))return;
+  fbar.style.top=(v.offsetTop+v.height-fbar.offsetHeight-10)+'px'}
+function fbarShow(){const c=B()?.scraps[fid];if(!c)return;
+  fbar.querySelectorAll('b').forEach(b=>b.classList.toggle('on',!!c[b.dataset.k]));fbar.classList.remove('hide');fbarPlace()}
+document.addEventListener('focusin',e=>{const t=e.target.closest?.('.t');
+  if(t&&t.isContentEditable){fid=t.closest('.s').dataset.id;fbarShow()}});
+document.addEventListener('focusout',()=>setTimeout(()=>{if(!document.activeElement?.closest?.('.t'))fbar.classList.add('hide')},120));
+visualViewport?.addEventListener('resize',fbarPlace);visualViewport?.addEventListener('scroll',fbarPlace);
+fbar.onmousedown=e=>e.preventDefault();fbar.ontouchstart=e=>e.preventDefault();  // keep the text focused/selected
+fbar.onclick=e=>{const k=e.target.dataset?.k,c=B()?.scraps[fid];if(!k||!c)return;
+  const v=!c[k];c[k]=v;                                   // instant: flip the class in place, no re-render
+  cvEl(fid)?.querySelector('.t').classList.toggle(k,v);e.target.classList.toggle('on',v);
+  updateDoc(ref(cur),{['scraps.'+fid+'.'+k]:v,['scraps.'+fid+'.ts']:Date.now()})};
 addEventListener('pagehide',()=>document.activeElement?.blur?.());
 document.addEventListener('visibilitychange',()=>document.hidden&&document.activeElement?.blur?.());
 document.fonts?.ready.then(()=>{if(user&&B()&&!dragging&&!editing())render()});
@@ -205,11 +221,6 @@ function el(id,s){
   const dots=document.createElement('div');dots.className='dots';
   COLORS.forEach(c=>{const i=document.createElement('i');i.style.background=c;i.onclick=e=>{e.stopPropagation();put(id,{...B().scraps[id],c})};dots.append(i)});
   d.append(dots);
-  if(!s.bin){const f=document.createElement('div');f.className='fmt';
-    [['b','B'],['i','I'],['u','U']].forEach(([k,l])=>{const e=document.createElement('b');e.textContent=l;e.className=s[k]?'on':'';
-      e.style.fontStyle=k==='i'?'italic':'';e.style.textDecoration=k==='u'?'underline':'';
-      e.onpointerdown=ev=>ev.preventDefault();  // keep the text focused
-      e.onclick=ev=>{ev.stopPropagation();const c=B().scraps[id];put(id,{...c,[k]:!c[k]})};f.append(e)});d.append(f)}
   const x=document.createElement('span');x.className='x';x.textContent=s.bin?'restore':'\u2715';
   x.onclick=e=>{e.stopPropagation();put(id,s.bin?{...B().scraps[id],bin:false}:{...B().scraps[id],bin:true,g:null})};d.append(x);
   d.onpointerdown=e=>{
