@@ -19,11 +19,13 @@ button.on{background:var(--ink);color:var(--bg)}
 #tools .sp{flex:1}
 #table{flex:1;position:relative;overflow:auto;background:var(--tbl);touch-action:pan-x pan-y}
 #canvas{position:relative;width:2400px;height:2400px}
-.s{position:absolute;width:150px;min-height:90px;padding:8px;border-radius:4px;box-shadow:0 2px 6px #0004;color:#222;touch-action:none;cursor:grab}
+.s{position:absolute;z-index:2;width:150px;min-height:90px;padding:8px;border-radius:4px;box-shadow:0 2px 6px #0004;color:#222;touch-action:none;cursor:grab}
 .s.drag{cursor:grabbing;box-shadow:0 8px 18px #0006;z-index:9999}
 .s.tgt{outline:3px dashed #e55}
 .s .t{white-space:pre-wrap;word-break:break-word;outline:none;min-height:60px;user-select:text}
-.s .g{position:absolute;right:-8px;top:-8px;background:#e55;color:#fff;border-radius:12px;padding:1px 7px;font-size:12px}
+.grp{position:absolute;z-index:1;border:2px solid #b5655a;border-radius:38% 42% 40% 44%/44% 40% 42% 38%;background:#b5655a14;touch-action:none;cursor:grab}
+.gn{position:absolute;left:50%;top:-16px;transform:translateX(-50%);background:var(--bg);border:2px solid #b5655a;border-radius:99px;padding:2px 12px;font-size:12px;letter-spacing:.06em;white-space:nowrap;min-width:70px;text-align:center;outline:none;user-select:text;cursor:text}
+.gn:empty:before{content:attr(data-ph);opacity:.5}
 .s .x{position:absolute;right:2px;bottom:0;opacity:.5;font-size:12px}
 .s.big{width:250px}.s.big .t{font-size:18px}
 .dots{position:absolute;left:4px;bottom:4px;display:flex;gap:3px}
@@ -36,11 +38,11 @@ dialog li{display:flex;gap:6px;margin:6px 0;align-items:center}dialog li span{fl
 <div id="app" class="hide">
   <div id="bar"></div>
   <div id="tools">
-    <button id="add">＋ Scrap</button>
-    <button id="undo">↶</button>
-    <button id="bin">🗑 <span id="bn">0</span></button>
+    <button id="add">Ôºã Scrap</button>
+    <button id="undo">‚Ü∂</button>
+    <button id="bin">üóë <span id="bn">0</span></button>
     <span class="sp"></span>
-    <button id="menu">•••</button>
+    <button id="menu">‚Ä¢‚Ä¢‚Ä¢</button>
   </div>
   <div id="table"><div id="canvas"></div></div>
 </div>
@@ -77,73 +79,112 @@ const ref=id=>doc(db,'users',user.uid,'boards',id);
 const sortedBoards=()=>Object.values(boards).sort((a,b)=>(a.order||0)-(b.order||0));
 async function newBoard(name){const id=uid8();cur=id;await setDoc(ref(id),{name,order:Date.now(),scraps:{}})}
 const B=()=>boards[cur];
-// write a scrap (undoable); s=null deletes permanently
-function put(id,s,undo=true){
-  const b=B();if(undo)history.push({b:cur,id,prev:b.scraps[id]||null});
-  b.scraps[id]=s||undefined; // optimistic
-  updateDoc(ref(cur),{['scraps.'+id]:s?{...s,ts:Date.now()}:deleteField()});
+// write scraps (one undo entry per commit); s=null deletes permanently. Groups with <2 live members dissolve.
+function commit(list,undo=true){
+  const b=B();b.groups??={};
+  if(undo)history.push({b:cur,ops:list.map(([id])=>({id,prev:b.scraps[id]||null}))});
+  const upd={},now=Date.now();
+  list.forEach(([id,s])=>{b.scraps[id]=s||undefined;upd['scraps.'+id]=s?{...s,ts:now}:deleteField()});
+  const n={};Object.values(b.scraps).forEach(s=>s&&s.g&&!s.bin&&(n[s.g]=(n[s.g]||0)+1));
+  Object.keys(b.groups).forEach(g=>{if(n[g]>=2)return;delete b.groups[g];upd['groups.'+g]=deleteField();
+    Object.entries(b.scraps).forEach(([id,s])=>{if(s&&s.g===g){b.scraps[id]=s={...s,g:null};upd['scraps.'+id]={...s,ts:now}}})});
+  updateDoc(ref(cur),upd);
 }
+const put=(id,s,undo=true)=>commit([[id,s]],undo);
+const gOf=(b,s)=>s&&s.g&&!s.bin&&b.groups?.[s.g]?s.g:null;
+const PAD=40;
+const cvEl=id=>$('#canvas').querySelector(`[data-id="${id}"]`);
 
 function render(){
   const b=B();if(!b)return;
   $('#bar').innerHTML='';
   sortedBoards().forEach(x=>{const e=document.createElement('button');e.textContent=x.name;e.className=x.id===cur?'on':'';
     e.onclick=()=>{cur=x.id;localStorage.cur=cur;render()};$('#bar').append(e)});
-  const plus=document.createElement('button');plus.textContent='＋';plus.onclick=()=>{const n=prompt('Board name');n&&newBoard(n)};$('#bar').append(plus);
+  const plus=document.createElement('button');plus.textContent='Ôºã';plus.onclick=()=>{const n=prompt('Board name');n&&newBoard(n)};$('#bar').append(plus);
   const all=Object.entries(b.scraps||{}).filter(([,s])=>s);
   $('#bn').textContent=all.filter(([,s])=>s.bin).length;
   $('#bin').classList.toggle('on',showBin);
-  const kids={};all.forEach(([id,s])=>{if(s.p&&!s.bin)(kids[s.p]??=[]).push(id)});
   const cv=$('#canvas');cv.innerHTML='';
-  all.filter(([,s])=>!!s.bin===showBin&&(showBin||!s.p||!b.scraps[s.p]||b.scraps[s.p].bin)).forEach(([id,s])=>cv.append(el(id,s,kids[id]||[])));
+  const shown=all.filter(([,s])=>!!s.bin===showBin),gs={};
+  shown.forEach(([id,s])=>{cv.append(el(id,s));const g=!showBin&&gOf(b,s);if(g)(gs[g]??=[]).push(id)});
+  Object.entries(gs).forEach(([g,ids])=>cv.append(gEl(g,ids)));
 }
-function el(id,s,ch){
+// bounding box (canvas coords) of a group's scraps, optionally excluding one
+function gbox(gid,ex){
+  let x1=1e9,y1=1e9,x2=-1e9,y2=-1e9;
+  Object.entries(B().scraps).forEach(([id,s])=>{if(id===ex||!s||s.g!==gid||s.bin)return;const n=cvEl(id);if(!n)return;
+    x1=Math.min(x1,n.offsetLeft);y1=Math.min(y1,n.offsetTop);x2=Math.max(x2,n.offsetLeft+n.offsetWidth);y2=Math.max(y2,n.offsetTop+n.offsetHeight)});
+  return x2<0?null:{x1,y1,x2,y2};
+}
+// generic pointer drag: move(dx,dy) live, end(dx,dy) on drop, tap() if it never moved
+function drag(node,e,{move,end,tap,cap}){
+  const sx=e.clientX,sy=e.clientY;let moved=false;
+  const mv=ev=>{const dx=ev.clientX-sx,dy=ev.clientY-sy;if(!moved&&Math.hypot(dx,dy)<5)return;
+    if(!moved){moved=true;dragging=true;node.setPointerCapture(e.pointerId);cap&&cap()}move(dx,dy)};
+  const up=ev=>{['pointermove','pointerup','pointercancel'].forEach(k=>node.removeEventListener(k,k==='pointermove'?mv:up));
+    if(!moved){tap&&tap();return}dragging=false;end(ev.clientX-sx,ev.clientY-sy)};
+  node.addEventListener('pointermove',mv);node.addEventListener('pointerup',up);node.addEventListener('pointercancel',up);
+}
+function gEl(gid,ids){
+  const b=B(),bb=gbox(gid),g=document.createElement('div');g.className='grp';g.dataset.gid=gid;
+  const L=bb.x1-PAD,T=bb.y1-PAD;
+  g.style.cssText=`left:${L}px;top:${T}px;width:${bb.x2-bb.x1+2*PAD}px;height:${bb.y2-bb.y1+2*PAD}px`;
+  const nm=document.createElement('div');nm.className='gn';nm.contentEditable=true;nm.dataset.ph='name this';nm.textContent=b.groups[gid].name||'';
+  nm.onblur=()=>{const v=nm.textContent.trim();if(b.groups[gid]&&v!==(b.groups[gid].name||'')){b.groups[gid].name=v;updateDoc(ref(cur),{['groups.'+gid+'.name']:v})}};
+  nm.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();nm.blur()}};
+  g.append(nm);
+  g.onpointerdown=e=>{
+    if(e.target===nm&&document.activeElement===nm)return;
+    const ox=Object.fromEntries(ids.map(i=>[i,[b.scraps[i].x,b.scraps[i].y]]));
+    drag(g,e,{cap:()=>nm.blur(),tap:()=>e.target===nm&&nm.focus(),
+      move:(dx,dy)=>{g.style.left=L+dx+'px';g.style.top=T+dy+'px';ids.forEach(i=>{const n=cvEl(i);n.style.left=ox[i][0]+dx+'px';n.style.top=ox[i][1]+dy+'px'})},
+      end:(dx,dy)=>{const cl=Math.max(dx,...ids.map(i=>-ox[i][0])),ct=Math.max(dy,...ids.map(i=>-ox[i][1]));
+        commit(ids.map(i=>[i,{...b.scraps[i],x:ox[i][0]+cl,y:ox[i][1]+ct}]));render()}});
+  };
+  return g;
+}
+function el(id,s){
   const d=document.createElement('div');d.className='s'+(s.big?' big':'');d.dataset.id=id;
   d.style.cssText+=`left:${s.x}px;top:${s.y}px;background:${s.c};transform:rotate(${(id.charCodeAt(0)%5-2)}deg)`;
   const t=document.createElement('div');t.className='t';t.contentEditable=!s.bin;t.textContent=s.t||'';
   t.onblur=()=>{if(t.textContent!==(s.t||''))put(id,{...B().scraps[id],t:t.textContent})};
   d.append(t);
-  if(ch.length){const g=document.createElement('span');g.className='g';g.textContent='+'+ch.length;g.onclick=e=>{e.stopPropagation();openGroup(id,ch)};d.append(g)}
   const dots=document.createElement('div');dots.className='dots';
   COLORS.forEach(c=>{const i=document.createElement('i');i.style.background=c;i.onclick=e=>{e.stopPropagation();put(id,{...B().scraps[id],c})};dots.append(i)});
   d.append(dots);
-  const x=document.createElement('span');x.className='x';x.textContent=s.bin?'restore':'✕';
-  x.onclick=e=>{e.stopPropagation();s.bin?put(id,{...B().scraps[id],bin:false}):put(id,{...B().scraps[id],bin:true})};d.append(x);
-  // drag by scrap body (not text while editing)
+  const x=document.createElement('span');x.className='x';x.textContent=s.bin?'restore':'‚úï';
+  x.onclick=e=>{e.stopPropagation();put(id,s.bin?{...B().scraps[id],bin:false}:{...B().scraps[id],bin:true,g:null})};d.append(x);
   d.onpointerdown=e=>{
     if(e.target===t&&document.activeElement===t)return;
-    if(e.target.closest('.x,.g,.dots'))return;
-    const sx=e.clientX,sy=e.clientY,ox=s.x,oy=s.y;let moved=false;
-    const mv=ev=>{const dx=ev.clientX-sx,dy=ev.clientY-sy;
-      if(!moved&&Math.hypot(dx,dy)<5)return;
-      if(!moved){moved=true;dragging=true;d.classList.add('drag');d.setPointerCapture(e.pointerId);t.blur()}
-      d.style.left=ox+dx+'px';d.style.top=oy+dy+'px';
-      const h=hit(d,id);document.querySelectorAll('.tgt').forEach(n=>n.classList.remove('tgt'));h&&h.classList.add('tgt')};
-    const up=ev=>{d.removeEventListener('pointermove',mv);d.removeEventListener('pointerup',up);d.releasePointerCapture?.(e.pointerId);
-      if(!moved){t.focus();return}
-      dragging=false;const h=hit(d,id),cur_=B().scraps[id];
-      if(h&&!s.bin)put(id,{...cur_,p:h.dataset.id});
-      else put(id,{...cur_,x:Math.max(0,ox+ev.clientX-sx),y:Math.max(0,oy+ev.clientY-sy),p:null});
-      render()};
-    d.addEventListener('pointermove',mv);d.addEventListener('pointerup',up);
+    if(e.target.closest('.x,.dots'))return;
+    drag(d,e,{cap:()=>{d.classList.add('drag');t.blur()},tap:()=>t.focus(),
+      move:(dx,dy)=>{d.style.left=s.x+dx+'px';d.style.top=s.y+dy+'px';
+        const h=hit(d);document.querySelectorAll('.tgt').forEach(n=>n.classList.remove('tgt'));h&&h.classList.add('tgt')},
+      end:(dx,dy)=>drop(id,d,dx,dy)});
   };
   return d;
 }
-function hit(d,id){const r=d.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;
-  return [...document.querySelectorAll('.s')].find(n=>n!==d&&(rr=>cx>rr.left&&cx<rr.right&&cy>rr.top&&cy<rr.bottom)(n.getBoundingClientRect()))}
-function openGroup(id,ch){
-  const b=B(),dlg=$('#dlg');
-  dlg.innerHTML='<h3>Group</h3><ul style="padding:0;list-style:none"></ul><button id="cl">Close</button>';
-  ch.forEach(k=>{const li=document.createElement('li'),sp=document.createElement('span');sp.textContent=b.scraps[k].t;
-    const u=document.createElement('button');u.textContent='Ungroup';u.onclick=()=>{put(k,{...b.scraps[k],p:null,x:b.scraps[id].x+30,y:b.scraps[id].y+30});dlg.close();render()};
-    li.style.cssText='background:'+b.scraps[k].c+';color:#222;padding:6px;border-radius:4px';li.append(sp,u);dlg.querySelector('ul').append(li)});
-  $('#cl').onclick=()=>dlg.close();dlg.showModal();
+function drop(id,d,dx,dy){
+  const b=B(),s=b.scraps[id],nx=Math.max(0,s.x+dx),ny=Math.max(0,s.y+dy),h=s.bin?null:hit(d);
+  if(h){ // dropped onto a scrap: join its group, or start a new one
+    const tid=h.dataset.id,t=b.scraps[tid],ch=[];let gid=gOf(b,t);
+    if(!gid){gid=uid8();b.groups??={};b.groups[gid]={name:''};updateDoc(ref(cur),{['groups.'+gid]:{name:''}});ch.push([tid,{...t,g:gid}])}
+    b.scraps[tid]={...t,g:gid};const bb=gbox(gid,id);
+    ch.push([id,{...s,g:gid,x:bb.x2+16,y:t.y}]);commit(ch);
+  }else{ // otherwise: is its centre inside a group's outline?
+    const cx=nx+d.offsetWidth/2,cy=ny+d.offsetHeight/2;let g=null;
+    Object.keys(b.groups||{}).forEach(gid=>{const bb=gbox(gid,id);if(bb&&cx>bb.x1-PAD&&cx<bb.x2+PAD&&cy>bb.y1-PAD&&cy<bb.y2+PAD)g=gid});
+    commit([[id,{...s,x:nx,y:ny,g:s.bin?null:g}]]);
+  }
+  render();
 }
+function hit(d){const r=d.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;
+  return [...document.querySelectorAll('.s')].find(n=>n!==d&&(rr=>cx>rr.left&&cx<rr.right&&cy>rr.top&&cy<rr.bottom)(n.getBoundingClientRect()))}
 
 $('#add').onclick=()=>{const tb=$('#table');const id=uid8();showBin=false;
   put(id,{t:'',x:tb.scrollLeft+20+Math.random()*80,y:tb.scrollTop+20+Math.random()*80,c:COLORS[Math.random()*5|0]});render();
   setTimeout(()=>document.querySelector(`[data-id="${id}"] .t`)?.focus(),0)};
-$('#undo').onclick=()=>{const h=history.pop();if(!h||h.b!==cur)return;put(h.id,h.prev,false)&&0;render()};
+$('#undo').onclick=()=>{const h=history.pop();if(!h||h.b!==cur)return;commit(h.ops.map(o=>[o.id,o.prev]),false);render()};
 $('#bin').onclick=()=>{showBin=!showBin;render()};
 $('#menu').onclick=()=>{
   const dlg=$('#dlg');dlg.innerHTML=`<h3>Menu</h3><p><button data-a="ren">Rename board</button> <button data-a="del">Delete board</button></p>
