@@ -171,12 +171,13 @@ function gEl(gid,ids){
   g.style.cssText=`left:${L}px;top:${T}px;width:${bb.x2-bb.x1+2*PAD}px;height:${bb.y2-bb.y1+2*PAD}px`;
   const nm=document.createElement('div');nm.className='gn';nm.contentEditable=true;nm.dataset.ph='name this';nm.textContent=b.groups[gid].name||'';
   let nt;nm.oninput=()=>{clearTimeout(nt);nt=setTimeout(()=>{const v=nm.textContent.trim();if(b.groups[gid]){b.groups[gid].name=v;updateDoc(ref(cur),{['groups.'+gid+'.name']:v})}},500)};
-  nm.onblur=()=>{clearTimeout(nt);const v=nm.textContent.trim();if(b.groups[gid]&&v!==(b.groups[gid].name||'')){b.groups[gid].name=v;updateDoc(ref(cur),{['groups.'+gid+'.name']:v})}render()};
+  nm.onblur=()=>{clearTimeout(nt);const v=nm.textContent.trim();if(b.groups[gid]&&v!==(b.groups[gid].name||'')){b.groups[gid].name=v;updateDoc(ref(cur),{['groups.'+gid+'.name']:v})}if(!dragging)render()};
   nm.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();nm.blur()}};
   g.append(nm);
   g.onpointerdown=e=>{
     if(e.target===nm&&document.activeElement===nm)return;
     const ox=Object.fromEntries(ids.map(i=>[i,px(b.scraps[i])]));
+    if(e.pointerType==='mouse')e.preventDefault();
     drag(g,e,{cap:()=>nm.blur(),tap:()=>e.target===nm&&nm.focus(),
       move:(dx,dy)=>{g.style.left=L+dx+'px';g.style.top=T+dy+'px';ids.forEach(i=>{const n=cvEl(i);n.style.left=ox[i][0]+dx+'px';n.style.top=ox[i][1]+dy+'px'})},
       end:(dx,dy)=>{const cl=Math.max(dx,...ids.map(i=>-ox[i][0])),ct=Math.max(dy,...ids.map(i=>-ox[i][1]));
@@ -191,7 +192,7 @@ function el(id,s){
   // text saves while typing (debounced) so closing the tab loses nothing; one undo step per edit session
   let tt,orig;t.onfocus=()=>{orig=B().scraps[id]};
   t.oninput=()=>{clearTimeout(tt);tt=setTimeout(()=>{const c=B().scraps[id];if(c){c.t=t.textContent;updateDoc(ref(cur),{['scraps.'+id+'.t']:c.t})}},500)};
-  t.onblur=()=>{clearTimeout(tt);const c=B().scraps[id];if(c&&orig&&t.textContent!==(orig.t||'')){history.push({b:cur,ops:[{id,prev:orig}]});put(id,{...c,t:t.textContent},false)}render()};
+  t.onblur=()=>{clearTimeout(tt);const c=B().scraps[id];if(c&&orig&&t.textContent!==(orig.t||'')){history.push({b:cur,ops:[{id,prev:orig}]});put(id,{...c,t:t.textContent},false)}if(!dragging)render()};
   d.append(t);
   const dots=document.createElement('div');dots.className='dots';
   COLORS.forEach(c=>{const i=document.createElement('i');i.style.background=c;i.onclick=e=>{e.stopPropagation();put(id,{...B().scraps[id],c})};dots.append(i)});
@@ -201,6 +202,7 @@ function el(id,s){
   d.onpointerdown=e=>{
     if(e.target===t&&document.activeElement===t)return;
     if(e.target.closest('.x,.dots'))return;
+    if(e.pointerType==='mouse')e.preventDefault();
     drag(d,e,{cap:()=>{d.classList.add('drag');t.blur()},tap:()=>t.focus(),
       move:(dx,dy)=>{const p=px(s);d.style.left=p[0]+dx+'px';d.style.top=p[1]+dy+'px';
         const h=hit(d);document.querySelectorAll('.tgt').forEach(n=>n.classList.remove('tgt'));h&&h.classList.add('tgt')},
