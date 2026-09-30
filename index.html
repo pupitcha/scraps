@@ -4,7 +4,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <title>Scraps</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,700;1,9..40,400;1,9..40,700&family=IBM+Plex+Sans+Thai:wght@400;700&family=Xanh+Mono:ital@0;1&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,200;0,9..40,400;0,9..40,700;1,9..40,400;1,9..40,700&family=IBM+Plex+Sans+Thai:wght@400;700&family=Alatsi&display=swap">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg">
 <meta name="theme-color" content="#f4efe6">
@@ -15,7 +15,7 @@
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:15px/1.5 'DM Sans','IBM Plex Sans Thai',system-ui,sans-serif;overscroll-behavior:none}
 #app{display:flex;flex-direction:column;height:100%;padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left)}
 #bar{display:flex;gap:4px;align-items:center;background:var(--bar);border-bottom:1px solid var(--line);padding:6px;overflow-x:auto;flex:none}
-button{font:inherit;color:inherit;background:none;border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer;white-space:nowrap}
+button{font:200 13px/1.3 "DM Sans","IBM Plex Sans Thai",sans-serif;letter-spacing:.06em;text-transform:uppercase;color:inherit;background:none;border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer;white-space:nowrap}
 button.on{background:var(--ink);color:var(--bg)}
 #tools{display:flex;gap:4px;padding:6px;flex:none;align-items:center;border-bottom:1px solid var(--line)}
 #tools .sp{flex:1}
@@ -26,18 +26,19 @@ button.on{background:var(--ink);color:var(--bg)}
 .s.tgt{outline:3px dashed #e55}
 .s .t{white-space:pre-wrap;word-break:break-word;outline:none;line-height:1.5;min-height:1.3em;user-select:text}
 .grp{position:absolute;z-index:1;border:2px solid #b5655a;border-radius:38% 42% 40% 44%/44% 40% 42% 38%;background:#b5655a14;touch-action:none;cursor:grab}
-.gn{font-family:'Xanh Mono','IBM Plex Sans Thai',ui-monospace,monospace;position:absolute;left:50%;top:-16px;transform:translateX(-50%);background:var(--bg);border:2px solid #b5655a;border-radius:99px;padding:2px 12px;font-size:12px;letter-spacing:.06em;white-space:nowrap;min-width:70px;text-align:center;outline:none;user-select:text;cursor:text}
+.gn{font-family:Alatsi,'IBM Plex Sans Thai',sans-serif;font-weight:700;font-synthesis:none;position:absolute;left:50%;top:-16px;transform:translateX(-50%);background:var(--bg);border:2px solid #b5655a;border-radius:99px;padding:2px 12px;font-size:12px;letter-spacing:.06em;white-space:nowrap;min-width:70px;text-align:center;outline:none;user-select:text;cursor:text}
 .gn:empty:before{content:attr(data-ph);opacity:.5}
 .s .x{position:absolute;right:2px;bottom:0;opacity:.5;font-size:12px}
 .s.big{max-width:300px}.s.big .t{font-size:18px}
 .dots{position:absolute;left:4px;bottom:4px;display:flex;gap:3px}
 @media(max-width:700px),(max-height:500px) and (max-width:1000px){#canvas{width:100%!important}#table{overflow-x:hidden}.s{max-width:170px}.s.big{max-width:230px}#tools button,#bar button{padding:5px 8px}}
 .dots i{width:10px;height:10px;border-radius:50%;border:1px solid #0004;display:inline-block}
+#login,dialog h3{font-weight:200;text-transform:uppercase;letter-spacing:.08em}
 .fmt{position:absolute;right:20px;bottom:2px;display:flex;gap:2px}
 .fmt b{font:700 12px 'DM Sans',sans-serif;width:18px;height:18px;line-height:18px;text-align:center;border-radius:4px;cursor:pointer;opacity:.55;user-select:none}
 .fmt b.on{opacity:1;background:#0002}
 .t.b{font-weight:700}.t.i{font-style:italic}.t.u{text-decoration:underline}
-dialog{border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--ink);max-width:90vw;width:380px}
+dialog{font-family:"DM Sans","IBM Plex Sans Thai",sans-serif;font-weight:200;text-transform:uppercase;letter-spacing:.06em;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--ink);max-width:90vw;width:380px}
 dialog li{display:flex;gap:6px;margin:6px 0;align-items:center}dialog li span{flex:1;white-space:pre-wrap;word-break:break-word}
 #login{margin:auto;text-align:center;padding:2em}
 .hide{display:none!important}
@@ -214,252 +215,6 @@ function el(id,s){
   d.onpointerdown=e=>{
     if(e.target===t&&document.activeElement===t)return;
     if(e.target.closest('.x,.dots,.fmt'))return;
-    if(e.pointerType==='mouse')e.preventDefault();
-    drag(d,e,{cap:()=>{d.classList.add('drag');t.blur()},tap:()=>t.focus(),
-      move:(dx,dy)=>{const p=px(s);d.style.left=p[0]+dx+'px';d.style.top=p[1]+dy+'px';
-        const h=hit(d);document.querySelectorAll('.tgt').forEach(n=>n.classList.remove('tgt'));h&&h.classList.add('tgt')},
-      end:(dx,dy)=>drop(id,d,dx,dy)});
-  };
-  return d;
-}
-function drop(id,d,dx,dy){
-  const b=B(),s=b.scraps[id],p0=px(s),nx=clampX(p0[0]+dx,d),ny=Math.max(0,p0[1]+dy),h=s.bin?null:hit(d);
-  if(h){ // dropped onto a scrap: join its group, or start a new one
-    const tid=h.dataset.id,t=b.scraps[tid],ch=[];let gid=gOf(b,t);
-    if(!gid){gid=uid8();b.groups??={};b.groups[gid]={name:''};updateDoc(ref(cur),{['groups.'+gid]:{name:''}});ch.push([tid,{...t,g:gid}])}
-    b.scraps[tid]={...t,g:gid};const bb=gbox(gid,id);
-    const fit=!mob()||bb.x2+16+d.offsetWidth<=$('#table').clientWidth-8;ch.push([id,setPos({...s,g:gid},fit?bb.x2+16:bb.x1,fit?px(t)[1]:bb.y2+12)]);commit(ch);
-  }else{ // otherwise: is its centre inside a group's outline?
-    const cx=nx+d.offsetWidth/2,cy=ny+d.offsetHeight/2;let g=null;
-    Object.keys(b.groups||{}).forEach(gid=>{const bb=gbox(gid,id);if(bb&&cx>bb.x1-PAD&&cx<bb.x2+PAD&&cy>bb.y1-PAD&&cy<bb.y2+PAD)g=gid});
-    commit([[id,setPos({...s,g:s.bin?null:g},nx,ny)]]);
-  }
-  render();
-}
-function hit(d){const r=d.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;
-  return [...document.querySelectorAll('.s')].find(n=>n!==d&&(rr=>cx>rr.left&&cx<rr.right&&cy>rr.top&&cy<rr.bottom)(n.getBoundingClientRect()))}
-
-$('#add').onclick=()=>{const tb=$('#table');const id=uid8();showBin=false;
-  put(id,{t:"",c:COLORS[Math.random()*5|0]});render();
-  setTimeout(()=>document.querySelector(`[data-id="${id}"] .t`)?.focus(),0)};
-$('#undo').onclick=()=>{const h=history.pop();if(!h||h.b!==cur)return;commit(h.ops.map(o=>[o.id,o.prev]),false);render()};
-$('#bin').onclick=()=>{showBin=!showBin;render()};
-$('#menu').onclick=()=>{
-  const dlg=$('#dlg');dlg.innerHTML=`<h3>Menu</h3><p><button data-a="ren">Rename board</button> <button data-a="del">Delete board</button></p>
-  <p><button data-a="empty">Empty bin</button> <button data-a="big">Toggle big scraps</button></p>
-  <p><button data-a="out">Sign out (${user.email})</button></p><button data-a="x">Close</button>`;
-  dlg.onclick=async e=>{const a=e.target.dataset?.a;if(!a)return;dlg.close();const b=B();
-    if(a==='ren'){const n=prompt('Name',b.name);n&&updateDoc(ref(cur),{name:n})}
-    if(a==='del'&&confirm('Delete board "'+b.name+'" and everything in it?')){await deleteDoc(ref(cur));cur=null}
-    if(a==='empty'&&confirm('Permanently delete bin?'))Object.entries(b.scraps).forEach(([id,s])=>s?.bin&&put(id,null,false));
-    if(a==='big'){const big=!Object.values(b.scraps).find(s=>s&&s.big);Object.entries(b.scraps).forEach(([id,s])=>s&&put(id,{...s,big},false));render()}
-    if(a==='out')signOut(auth)};
-  dlg.showModal()};
-</script></body></html>
-<!doctype html>
-<html lang="en"><head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<title>Scraps</title>
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icon.svg">
-<meta name="theme-color" content="#f4efe6">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<style>
-:root{--bg:#f4efe6;--ink:#2b2b2b;--bar:#ebe4d6;--line:#d8cfbd;--tbl:#efe8da}
-@media(prefers-color-scheme:dark){:root{--bg:#1e1e1c;--ink:#eee;--bar:#292927;--line:#3d3d39;--tbl:#242422}}
-*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:15px system-ui,sans-serif;overscroll-behavior:none}
-#app{display:flex;flex-direction:column;height:100%;padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left)}
-#bar{display:flex;gap:4px;align-items:center;background:var(--bar);border-bottom:1px solid var(--line);padding:6px;overflow-x:auto;flex:none}
-button{font:inherit;color:inherit;background:none;border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer;white-space:nowrap}
-button.on{background:var(--ink);color:var(--bg)}
-#tools{display:flex;gap:4px;padding:6px;flex:none;align-items:center;border-bottom:1px solid var(--line)}
-#tools .sp{flex:1}
-#table{flex:1;position:relative;overflow:auto;background:var(--tbl);touch-action:pan-x pan-y}
-#canvas{position:relative;width:2400px;height:2400px}
-.s{position:absolute;z-index:2;width:max-content;min-width:110px;max-width:220px;padding:8px 10px 22px;border-radius:4px;box-shadow:0 2px 6px #0004;color:#222;touch-action:none;cursor:grab}
-.s.drag{cursor:grabbing;box-shadow:0 8px 18px #0006;z-index:9999}
-.s.tgt{outline:3px dashed #e55}
-.s .t{white-space:pre-wrap;word-break:break-word;outline:none;min-height:1.3em;user-select:text}
-.grp{position:absolute;z-index:1;border:2px solid #b5655a;border-radius:38% 42% 40% 44%/44% 40% 42% 38%;background:#b5655a14;touch-action:none;cursor:grab}
-.gn{position:absolute;left:50%;top:-16px;transform:translateX(-50%);background:var(--bg);border:2px solid #b5655a;border-radius:99px;padding:2px 12px;font-size:12px;letter-spacing:.06em;white-space:nowrap;min-width:70px;text-align:center;outline:none;user-select:text;cursor:text}
-.gn:empty:before{content:attr(data-ph);opacity:.5}
-.s .x{position:absolute;right:2px;bottom:0;opacity:.5;font-size:12px}
-.s.big{max-width:300px}.s.big .t{font-size:18px}
-.dots{position:absolute;left:4px;bottom:4px;display:flex;gap:3px}
-@media(max-width:700px),(max-height:500px) and (max-width:1000px){#canvas{width:100%!important}#table{overflow-x:hidden}.s{max-width:170px}.s.big{max-width:230px}#tools button,#bar button{padding:5px 8px}}
-.dots i{width:10px;height:10px;border-radius:50%;border:1px solid #0004;display:inline-block}
-dialog{border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--ink);max-width:90vw;width:380px}
-dialog li{display:flex;gap:6px;margin:6px 0;align-items:center}dialog li span{flex:1;white-space:pre-wrap;word-break:break-word}
-#login{margin:auto;text-align:center;padding:2em}
-.hide{display:none!important}
-</style></head><body>
-<div id="app" class="hide">
-  <div id="bar"></div>
-  <div id="tools">
-    <button id="add">&#xFF0B; Scrap</button>
-    <button id="undo">&#x21B6;</button>
-    <button id="bin">&#x1F5D1; <span id="bn">0</span></button>
-    <span class="sp"></span>
-    <button id="menu">&#x2022;&#x2022;&#x2022;</button>
-  </div>
-  <div id="table"><div id="canvas"></div></div>
-</div>
-<div id="login" class="hide"><h2>Scraps</h2><p id="lmsg">Sign in to sync.</p><button id="gbtn">Sign in with Google</button></div>
-<dialog id="dlg"></dialog>
-<script type="module">
-import {firebaseConfig} from './config.js';
-import {initializeApp} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-import {getAuth,onAuthStateChanged,signInWithPopup,GoogleAuthProvider,signOut} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,collection,doc,onSnapshot,setDoc,updateDoc,deleteDoc,deleteField} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-
-const $=s=>document.querySelector(s);
-const COLORS=['#f7d774','#9fd3c7','#f4a6a6','#a9c4f5','#d4b8f0','#fff'];
-const uid8=()=>Math.random().toString(36).slice(2,10);
-if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
-
-const app=initializeApp(firebaseConfig);
-const auth=getAuth(app);
-const db=initializeFirestore(app,{localCache:persistentLocalCache({tabManager:persistentMultipleTabManager()})});
-let user,boards={},cur=localStorage.cur,showBin=false,unsub,history=[],dragging=false;
-
-$('#gbtn').onclick=()=>signInWithPopup(auth,new GoogleAuthProvider()).catch(e=>$('#lmsg').textContent=e.message);
-let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{if(!dragging&&user&&B())render()},200)});
-onAuthStateChanged(auth,u=>{
-  user=u;$('#login').classList.toggle('hide',!!u);$('#app').classList.toggle('hide',!u);
-  unsub&&unsub();if(!u)return;
-  unsub=onSnapshot(collection(db,'users',u.uid,'boards'),async snap=>{
-    boards={};snap.forEach(d=>boards[d.id]={id:d.id,...d.data()});
-    if(!Object.keys(boards).length){await newBoard('Board 1');return}
-    if(!boards[cur])cur=sortedBoards()[0].id;
-    if(!dragging&&!editing())render();
-  });
-});
-const ref=id=>doc(db,'users',user.uid,'boards',id);
-const sortedBoards=()=>Object.values(boards).sort((a,b)=>(a.order||0)-(b.order||0));
-async function newBoard(name){const id=uid8();cur=id;await setDoc(ref(id),{name,order:Date.now(),scraps:{}})}
-const B=()=>boards[cur];
-// write scraps (one undo entry per commit); s=null deletes permanently. Groups with <2 live members dissolve.
-function commit(list,undo=true){
-  const b=B();b.groups??={};
-  if(undo)history.push({b:cur,ops:list.map(([id])=>({id,prev:b.scraps[id]||null}))});
-  const upd={},now=Date.now();
-  list.forEach(([id,s])=>{b.scraps[id]=s||undefined;upd['scraps.'+id]=s?{...s,ts:now}:deleteField()});
-  const n={};Object.values(b.scraps).forEach(s=>s&&s.g&&!s.bin&&(n[s.g]=(n[s.g]||0)+1));
-  Object.keys(b.groups).forEach(g=>{if(n[g]>=2)return;delete b.groups[g];upd['groups.'+g]=deleteField();
-    Object.entries(b.scraps).forEach(([id,s])=>{if(s&&s.g===g){b.scraps[id]=s={...s,g:null};upd['scraps.'+id]={...s,ts:now}}})});
-  updateDoc(ref(cur),upd);
-}
-const put=(id,s,undo=true)=>commit([[id,s]],undo);
-const gOf=(b,s)=>s&&s.g&&!s.bin&&b.groups?.[s.g]?s.g:null;
-const PAD=40;
-const cvEl=id=>$('#canvas').querySelector(`[data-id="${id}"]`);
-const editing=()=>!!document.activeElement?.closest?.('.t,.gn');
-addEventListener('pagehide',()=>document.activeElement?.blur?.());
-document.addEventListener('visibilitychange',()=>document.hidden&&document.activeElement?.blur?.());
-// Each device class keeps its own layout: desktop uses x,y; phones use qx,qy.
-const mob=()=>innerWidth<=700||(innerHeight<=500&&innerWidth<=1000);
-const PK=()=>mob()?['qx','qy']:['x','y'];
-const px=s=>{const[k,l]=PK();return[s[k]??0,s[l]??0]};
-const setPos=(s,x,y)=>{const[k,l]=PK();return{...s,[k]:Math.round(x),[l]:Math.round(y)}};
-const clampX=(x,d)=>Math.max(0,mob()?Math.min(x,$('#table').clientWidth-d.offsetWidth-4):x);
-// scraps with no position on this device class are placed into free space, measured so nothing overlaps; groups stay together
-function pack(b){
-  const [kx,ky]=PK(),W=$('#table').clientWidth,M=14,upd={},R=[];
-  const miss=Object.entries(b.scraps).filter(([,s])=>s&&!s.bin&&s[kx]==null).sort((a,c)=>(a[1].ts||0)-(c[1].ts||0));
-  if(!miss.length)return;
-  const skip=new Set(miss.map(([id])=>id)),gb={};
-  Object.entries(b.scraps).forEach(([id,s])=>{const n=!skip.has(id)&&s&&!s.bin&&cvEl(id);if(!n)return;
-    const r={x:n.offsetLeft,y:n.offsetTop,w:n.offsetWidth,h:n.offsetHeight};R.push(r);const g=gOf(b,s);
-    if(g){const o=gb[g]??={x1:1e9,y1:1e9,x2:-1e9,y2:-1e9};o.x1=Math.min(o.x1,r.x);o.y1=Math.min(o.y1,r.y);o.x2=Math.max(o.x2,r.x+r.w);o.y2=Math.max(o.y2,r.y+r.h)}});
-  Object.values(gb).forEach(o=>R.push({x:o.x1-PAD,y:o.y1-PAD-16,w:o.x2-o.x1+2*PAD,h:o.y2-o.y1+2*PAD+16}));
-  const free=(w,h,y0)=>{for(let y=Math.max(16,y0);;y+=16)for(let x=16;x===16||x+w<=W-16;x+=16)
-    if(!R.some(r=>x<r.x+r.w+M&&x+w+M>r.x&&y<r.y+r.h+M&&y+h+M>r.y))return[x,y]};
-  const set=(id,x,y)=>{const n=cvEl(id);n.style.left=x+'px';n.style.top=y+'px';b.scraps[id]={...b.scraps[id],[kx]:x,[ky]:y};
-    upd['scraps.'+id+'.'+kx]=x;upd['scraps.'+id+'.'+ky]=y};
-  const top=$('#table').scrollTop,gm={},singles=[];
-  miss.forEach(([id,s])=>{const g=gOf(b,s);g&&!gb[g]?(gm[g]??=[]).push(id):singles.push(id)});
-  Object.values(gm).forEach(ids=>{ // whole group new here: lay members out in wrapped rows inside one outline
-    const inner=Math.max(160,W-2*PAD-32);let cx=0,cy=0,rh=0,cw=0;const pos=[];
-    ids.forEach(id=>{const n=cvEl(id),w=n.offsetWidth,h=n.offsetHeight;if(cx&&cx+w>inner){cx=0;cy+=rh+12;rh=0}
-      pos.push([id,cx,cy]);cx+=w+12;cw=Math.max(cw,cx-12);rh=Math.max(rh,h)});
-    const w=cw+2*PAD,h=cy+rh+2*PAD+16,[X,Y]=free(w,h,top);R.push({x:X,y:Y,w,h});
-    pos.forEach(([id,x,y])=>set(id,X+PAD+x,Y+16+PAD+y))});
-  singles.forEach(id=>{const n=cvEl(id),g=gOf(b,b.scraps[id]),w=n.offsetWidth,h=n.offsetHeight;
-    const[x,y]=free(w,h,g&&gb[g]?gb[g].y1:top);R.push({x,y,w,h});set(id,x,y)});
-  updateDoc(ref(cur),upd);
-}
-
-function render(){
-  const b=B();if(!b)return;
-  $('#bar').innerHTML='';
-  sortedBoards().forEach(x=>{const e=document.createElement('button');e.textContent=x.name;e.className=x.id===cur?'on':'';
-    e.onclick=()=>{cur=x.id;localStorage.cur=cur;render()};$('#bar').append(e)});
-  const plus=document.createElement('button');plus.textContent='\uFF0B';plus.onclick=()=>{const n=prompt('Board name');n&&newBoard(n)};$('#bar').append(plus);
-  const all=Object.entries(b.scraps||{}).filter(([,s])=>s);
-  $('#bn').textContent=all.filter(([,s])=>s.bin).length;
-  $('#bin').classList.toggle('on',showBin);
-  const cv=$('#canvas');cv.innerHTML='';
-  const shown=all.filter(([,s])=>!!s.bin===showBin),gs={};
-  shown.forEach(([id,s])=>{cv.append(el(id,s));const g=!showBin&&gOf(b,s);if(g)(gs[g]??=[]).push(id)});
-  if(!showBin)pack(b);
-  Object.entries(gs).forEach(([g,ids])=>cv.append(gEl(g,ids)));
-  const bot=Math.max(0,...[...cv.children].map(n=>n.offsetTop+n.offsetHeight));
-  cv.style.height=Math.max($('#table').clientHeight,bot+260)+'px';
-}
-// bounding box (canvas coords) of a group's scraps, optionally excluding one
-function gbox(gid,ex){
-  let x1=1e9,y1=1e9,x2=-1e9,y2=-1e9;
-  Object.entries(B().scraps).forEach(([id,s])=>{if(id===ex||!s||s.g!==gid||s.bin)return;const n=cvEl(id);if(!n)return;
-    x1=Math.min(x1,n.offsetLeft);y1=Math.min(y1,n.offsetTop);x2=Math.max(x2,n.offsetLeft+n.offsetWidth);y2=Math.max(y2,n.offsetTop+n.offsetHeight)});
-  return x2<0?null:{x1,y1,x2,y2};
-}
-// generic pointer drag: move(dx,dy) live, end(dx,dy) on drop, tap() if it never moved
-function drag(node,e,{move,end,tap,cap}){
-  const sx=e.clientX,sy=e.clientY;let moved=false;
-  const mv=ev=>{const dx=ev.clientX-sx,dy=ev.clientY-sy;if(!moved&&Math.hypot(dx,dy)<5)return;
-    if(!moved){moved=true;dragging=true;node.setPointerCapture(e.pointerId);cap&&cap()}move(dx,dy)};
-  const up=ev=>{['pointermove','pointerup','pointercancel'].forEach(k=>node.removeEventListener(k,k==='pointermove'?mv:up));
-    if(!moved){tap&&tap();return}dragging=false;end(ev.clientX-sx,ev.clientY-sy)};
-  node.addEventListener('pointermove',mv);node.addEventListener('pointerup',up);node.addEventListener('pointercancel',up);
-}
-function gEl(gid,ids){
-  const b=B(),bb=gbox(gid),g=document.createElement('div');g.className='grp';g.dataset.gid=gid;
-  const L=bb.x1-PAD,T=bb.y1-PAD;
-  g.style.cssText=`left:${L}px;top:${T}px;width:${bb.x2-bb.x1+2*PAD}px;height:${bb.y2-bb.y1+2*PAD}px`;
-  const nm=document.createElement('div');nm.className='gn';nm.contentEditable=true;nm.dataset.ph='name this';nm.textContent=b.groups[gid].name||'';
-  let nt;nm.oninput=()=>{clearTimeout(nt);nt=setTimeout(()=>{const v=nm.textContent.trim();if(b.groups[gid]){b.groups[gid].name=v;updateDoc(ref(cur),{['groups.'+gid+'.name']:v})}},500)};
-  nm.onblur=()=>{clearTimeout(nt);const v=nm.textContent.trim();if(b.groups[gid]&&v!==(b.groups[gid].name||'')){b.groups[gid].name=v;updateDoc(ref(cur),{['groups.'+gid+'.name']:v})}if(!dragging)render()};
-  nm.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();nm.blur()}};
-  g.append(nm);
-  g.onpointerdown=e=>{
-    if(e.target===nm&&document.activeElement===nm)return;
-    const ox=Object.fromEntries(ids.map(i=>[i,px(b.scraps[i])]));
-    if(e.pointerType==='mouse')e.preventDefault();
-    drag(g,e,{cap:()=>nm.blur(),tap:()=>e.target===nm&&nm.focus(),
-      move:(dx,dy)=>{g.style.left=L+dx+'px';g.style.top=T+dy+'px';ids.forEach(i=>{const n=cvEl(i);n.style.left=ox[i][0]+dx+'px';n.style.top=ox[i][1]+dy+'px'})},
-      end:(dx,dy)=>{const cl=Math.max(dx,...ids.map(i=>-ox[i][0])),ct=Math.max(dy,...ids.map(i=>-ox[i][1]));
-        commit(ids.map(i=>[i,setPos(b.scraps[i],ox[i][0]+cl,ox[i][1]+ct)]));render()}});
-  };
-  return g;
-}
-function el(id,s){
-  const d=document.createElement('div');d.className='s'+(s.big?' big':'');d.dataset.id=id;
-  d.style.cssText+=`left:${px(s)[0]}px;top:${px(s)[1]}px;background:${s.c};transform:rotate(${(id.charCodeAt(0)%5-2)}deg)`;
-  const t=document.createElement('div');t.className='t';t.contentEditable=!s.bin;t.textContent=s.t||'';
-  // text saves while typing (debounced) so closing the tab loses nothing; one undo step per edit session
-  let tt,orig;t.onfocus=()=>{orig=B().scraps[id]};
-  t.oninput=()=>{clearTimeout(tt);tt=setTimeout(()=>{const c=B().scraps[id];if(c){c.t=t.textContent;updateDoc(ref(cur),{['scraps.'+id+'.t']:c.t})}},500)};
-  t.onblur=()=>{clearTimeout(tt);const c=B().scraps[id];if(c&&orig&&t.textContent!==(orig.t||'')){history.push({b:cur,ops:[{id,prev:orig}]});put(id,{...c,t:t.textContent},false)}if(!dragging)render()};
-  d.append(t);
-  const dots=document.createElement('div');dots.className='dots';
-  COLORS.forEach(c=>{const i=document.createElement('i');i.style.background=c;i.onclick=e=>{e.stopPropagation();put(id,{...B().scraps[id],c})};dots.append(i)});
-  d.append(dots);
-  const x=document.createElement('span');x.className='x';x.textContent=s.bin?'restore':'\u2715';
-  x.onclick=e=>{e.stopPropagation();put(id,s.bin?{...B().scraps[id],bin:false}:{...B().scraps[id],bin:true,g:null})};d.append(x);
-  d.onpointerdown=e=>{
-    if(e.target===t&&document.activeElement===t)return;
-    if(e.target.closest('.x,.dots'))return;
     if(e.pointerType==='mouse')e.preventDefault();
     drag(d,e,{cap:()=>{d.classList.add('drag');t.blur()},tap:()=>t.focus(),
       move:(dx,dy)=>{const p=px(s);d.style.left=p[0]+dx+'px';d.style.top=p[1]+dy+'px';
