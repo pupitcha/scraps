@@ -38,11 +38,11 @@ dialog li{display:flex;gap:6px;margin:6px 0;align-items:center}dialog li span{fl
 <div id="app" class="hide">
   <div id="bar"></div>
   <div id="tools">
-    <button id="add">Ôºã Scrap</button>
-    <button id="undo">‚Ü∂</button>
-    <button id="bin">üóë <span id="bn">0</span></button>
+    <button id="add">&#xFF0B; Scrap</button>
+    <button id="undo">&#x21B6;</button>
+    <button id="bin">&#x1F5D1; <span id="bn">0</span></button>
     <span class="sp"></span>
-    <button id="menu">‚Ä¢‚Ä¢‚Ä¢</button>
+    <button id="menu">&#x2022;&#x2022;&#x2022;</button>
   </div>
   <div id="table"><div id="canvas"></div></div>
 </div>
@@ -100,7 +100,7 @@ function render(){
   $('#bar').innerHTML='';
   sortedBoards().forEach(x=>{const e=document.createElement('button');e.textContent=x.name;e.className=x.id===cur?'on':'';
     e.onclick=()=>{cur=x.id;localStorage.cur=cur;render()};$('#bar').append(e)});
-  const plus=document.createElement('button');plus.textContent='Ôºã';plus.onclick=()=>{const n=prompt('Board name');n&&newBoard(n)};$('#bar').append(plus);
+  const plus=document.createElement('button');plus.textContent='\uFF0B';plus.onclick=()=>{const n=prompt('Board name');n&&newBoard(n)};$('#bar').append(plus);
   const all=Object.entries(b.scraps||{}).filter(([,s])=>s);
   $('#bn').textContent=all.filter(([,s])=>s.bin).length;
   $('#bin').classList.toggle('on',showBin);
@@ -152,7 +152,7 @@ function el(id,s){
   const dots=document.createElement('div');dots.className='dots';
   COLORS.forEach(c=>{const i=document.createElement('i');i.style.background=c;i.onclick=e=>{e.stopPropagation();put(id,{...B().scraps[id],c})};dots.append(i)});
   d.append(dots);
-  const x=document.createElement('span');x.className='x';x.textContent=s.bin?'restore':'‚úï';
+  const x=document.createElement('span');x.className='x';x.textContent=s.bin?'restore':'\u2715';
   x.onclick=e=>{e.stopPropagation();put(id,s.bin?{...B().scraps[id],bin:false}:{...B().scraps[id],bin:true,g:null})};d.append(x);
   d.onpointerdown=e=>{
     if(e.target===t&&document.activeElement===t)return;
