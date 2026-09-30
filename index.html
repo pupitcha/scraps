@@ -11,7 +11,7 @@
 :root{--bg:#f4efe6;--ink:#2b2b2b;--bar:#ebe4d6;--line:#d8cfbd;--tbl:#efe8da}
 @media(prefers-color-scheme:dark){:root{--bg:#1e1e1c;--ink:#eee;--bar:#292927;--line:#3d3d39;--tbl:#242422}}
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:15px system-ui,sans-serif;overscroll-behavior:none}
-#app{display:flex;flex-direction:column;height:100%;padding-top:env(safe-area-inset-top)}
+#app{display:flex;flex-direction:column;height:100%;padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left)}
 #bar{display:flex;gap:4px;align-items:center;background:var(--bar);border-bottom:1px solid var(--line);padding:6px;overflow-x:auto;flex:none}
 button{font:inherit;color:inherit;background:none;border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer;white-space:nowrap}
 button.on{background:var(--ink);color:var(--bg)}
@@ -19,6 +19,7 @@ button.on{background:var(--ink);color:var(--bg)}
 #tools .sp{flex:1}
 #table{flex:1;position:relative;overflow:auto;background:var(--tbl);touch-action:pan-x pan-y}
 #canvas{position:relative;width:2400px;height:2400px}
+@media(max-width:700px),(max-height:500px) and (max-width:1000px){#canvas{width:100%!important}#table{overflow-x:hidden}.s{width:140px}.s.big{width:200px}#tools button,#bar button{padding:5px 8px}}
 .s{position:absolute;z-index:2;width:150px;min-height:90px;padding:8px;border-radius:4px;box-shadow:0 2px 6px #0004;color:#222;touch-action:none;cursor:grab}
 .s.drag{cursor:grabbing;box-shadow:0 8px 18px #0006;z-index:9999}
 .s.tgt{outline:3px dashed #e55}
@@ -65,6 +66,7 @@ const db=initializeFirestore(app,{localCache:persistentLocalCache({tabManager:pe
 let user,boards={},cur=localStorage.cur,showBin=false,unsub,history=[],dragging=false;
 
 $('#gbtn').onclick=()=>signInWithPopup(auth,new GoogleAuthProvider()).catch(e=>$('#lmsg').textContent=e.message);
+let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{if(!dragging&&user&&B())render()},200)});
 onAuthStateChanged(auth,u=>{
   user=u;$('#login').classList.toggle('hide',!!u);$('#app').classList.toggle('hide',!u);
   unsub&&unsub();if(!u)return;
@@ -94,9 +96,32 @@ const put=(id,s,undo=true)=>commit([[id,s]],undo);
 const gOf=(b,s)=>s&&s.g&&!s.bin&&b.groups?.[s.g]?s.g:null;
 const PAD=40;
 const cvEl=id=>$('#canvas').querySelector(`[data-id="${id}"]`);
+// Each device class keeps its own layout: desktop uses x,y; phones (<=700px) use mx,my.
+const mob=()=>innerWidth<=700||(innerHeight<=500&&innerWidth<=1000);
+const PK=()=>mob()?['mx','my']:['x','y'];
+const px=s=>{const[k,l]=PK();return[s[k]??0,s[l]??0]};
+const setPos=(s,x,y)=>{const[k,l]=PK();return{...s,[k]:Math.round(x),[l]:Math.round(y)}};
+const clampX=(x,d)=>Math.max(0,mob()?Math.min(x,$('#table').clientWidth-d.offsetWidth-4):x);
+// scraps with no position on this device class get a tidy grid slot (groups kept together, starting a new row)
+function autoPlace(b){
+  const [kx,ky]=PK(),M=mob(),step=M?148:165,x0=40,rh=M?130:120;
+  const cols=Math.max(M?2:3,Math.floor((($('#table').clientWidth||900)-x0)/step));
+  const gid=s=>s.g&&b.groups?.[s.g]?s.g:'';
+  const miss=Object.entries(b.scraps||{}).filter(([,s])=>s&&!s.bin&&s[kx]==null);
+  if(!miss.length)return;
+  let y0=30;Object.values(b.scraps).forEach(s=>{if(s&&!s.bin&&s[kx]!=null)y0=Math.max(y0,s[ky]+rh)});
+  miss.sort((a,c)=>(gid(a[1])>gid(c[1])?1:gid(a[1])<gid(c[1])?-1:0)||(a[1].ts||0)-(c[1].ts||0));
+  let col=0,row=0,last='',upd={};
+  miss.forEach(([id,s])=>{const g=gid(s);
+    if(g!==last){if(col>0){row++;col=0}if(g)row+=.5;last=g}
+    const x=x0+col*step,y=Math.round(y0+row*rh);b.scraps[id]={...s,[kx]:x,[ky]:y};
+    upd['scraps.'+id+'.'+kx]=x;upd['scraps.'+id+'.'+ky]=y;
+    if(++col>=cols){col=0;row++}});
+  updateDoc(ref(cur),upd);
+}
 
 function render(){
-  const b=B();if(!b)return;
+  const b=B();if(!b)return;autoPlace(b);
   $('#bar').innerHTML='';
   sortedBoards().forEach(x=>{const e=document.createElement('button');e.textContent=x.name;e.className=x.id===cur?'on':'';
     e.onclick=()=>{cur=x.id;localStorage.cur=cur;render()};$('#bar').append(e)});
@@ -108,6 +133,8 @@ function render(){
   const shown=all.filter(([,s])=>!!s.bin===showBin),gs={};
   shown.forEach(([id,s])=>{cv.append(el(id,s));const g=!showBin&&gOf(b,s);if(g)(gs[g]??=[]).push(id)});
   Object.entries(gs).forEach(([g,ids])=>cv.append(gEl(g,ids)));
+  const bot=Math.max(0,...[...cv.children].map(n=>n.offsetTop+n.offsetHeight));
+  cv.style.height=Math.max($('#table').clientHeight,bot+260)+'px';
 }
 // bounding box (canvas coords) of a group's scraps, optionally excluding one
 function gbox(gid,ex){
@@ -135,17 +162,17 @@ function gEl(gid,ids){
   g.append(nm);
   g.onpointerdown=e=>{
     if(e.target===nm&&document.activeElement===nm)return;
-    const ox=Object.fromEntries(ids.map(i=>[i,[b.scraps[i].x,b.scraps[i].y]]));
+    const ox=Object.fromEntries(ids.map(i=>[i,px(b.scraps[i])]));
     drag(g,e,{cap:()=>nm.blur(),tap:()=>e.target===nm&&nm.focus(),
       move:(dx,dy)=>{g.style.left=L+dx+'px';g.style.top=T+dy+'px';ids.forEach(i=>{const n=cvEl(i);n.style.left=ox[i][0]+dx+'px';n.style.top=ox[i][1]+dy+'px'})},
       end:(dx,dy)=>{const cl=Math.max(dx,...ids.map(i=>-ox[i][0])),ct=Math.max(dy,...ids.map(i=>-ox[i][1]));
-        commit(ids.map(i=>[i,{...b.scraps[i],x:ox[i][0]+cl,y:ox[i][1]+ct}]));render()}});
+        commit(ids.map(i=>[i,setPos(b.scraps[i],ox[i][0]+cl,ox[i][1]+ct)]));render()}});
   };
   return g;
 }
 function el(id,s){
   const d=document.createElement('div');d.className='s'+(s.big?' big':'');d.dataset.id=id;
-  d.style.cssText+=`left:${s.x}px;top:${s.y}px;background:${s.c};transform:rotate(${(id.charCodeAt(0)%5-2)}deg)`;
+  d.style.cssText+=`left:${px(s)[0]}px;top:${px(s)[1]}px;background:${s.c};transform:rotate(${(id.charCodeAt(0)%5-2)}deg)`;
   const t=document.createElement('div');t.className='t';t.contentEditable=!s.bin;t.textContent=s.t||'';
   t.onblur=()=>{if(t.textContent!==(s.t||''))put(id,{...B().scraps[id],t:t.textContent})};
   d.append(t);
@@ -158,23 +185,23 @@ function el(id,s){
     if(e.target===t&&document.activeElement===t)return;
     if(e.target.closest('.x,.dots'))return;
     drag(d,e,{cap:()=>{d.classList.add('drag');t.blur()},tap:()=>t.focus(),
-      move:(dx,dy)=>{d.style.left=s.x+dx+'px';d.style.top=s.y+dy+'px';
+      move:(dx,dy)=>{const p=px(s);d.style.left=p[0]+dx+'px';d.style.top=p[1]+dy+'px';
         const h=hit(d);document.querySelectorAll('.tgt').forEach(n=>n.classList.remove('tgt'));h&&h.classList.add('tgt')},
       end:(dx,dy)=>drop(id,d,dx,dy)});
   };
   return d;
 }
 function drop(id,d,dx,dy){
-  const b=B(),s=b.scraps[id],nx=Math.max(0,s.x+dx),ny=Math.max(0,s.y+dy),h=s.bin?null:hit(d);
+  const b=B(),s=b.scraps[id],p0=px(s),nx=clampX(p0[0]+dx,d),ny=Math.max(0,p0[1]+dy),h=s.bin?null:hit(d);
   if(h){ // dropped onto a scrap: join its group, or start a new one
     const tid=h.dataset.id,t=b.scraps[tid],ch=[];let gid=gOf(b,t);
     if(!gid){gid=uid8();b.groups??={};b.groups[gid]={name:''};updateDoc(ref(cur),{['groups.'+gid]:{name:''}});ch.push([tid,{...t,g:gid}])}
     b.scraps[tid]={...t,g:gid};const bb=gbox(gid,id);
-    ch.push([id,{...s,g:gid,x:bb.x2+16,y:t.y}]);commit(ch);
+    ch.push([id,setPos({...s,g:gid},bb.x2+16,px(t)[1])]);commit(ch);
   }else{ // otherwise: is its centre inside a group's outline?
     const cx=nx+d.offsetWidth/2,cy=ny+d.offsetHeight/2;let g=null;
     Object.keys(b.groups||{}).forEach(gid=>{const bb=gbox(gid,id);if(bb&&cx>bb.x1-PAD&&cx<bb.x2+PAD&&cy>bb.y1-PAD&&cy<bb.y2+PAD)g=gid});
-    commit([[id,{...s,x:nx,y:ny,g:s.bin?null:g}]]);
+    commit([[id,setPos({...s,g:s.bin?null:g},nx,ny)]]);
   }
   render();
 }
@@ -182,7 +209,7 @@ function hit(d){const r=d.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r
   return [...document.querySelectorAll('.s')].find(n=>n!==d&&(rr=>cx>rr.left&&cx<rr.right&&cy>rr.top&&cy<rr.bottom)(n.getBoundingClientRect()))}
 
 $('#add').onclick=()=>{const tb=$('#table');const id=uid8();showBin=false;
-  put(id,{t:'',x:tb.scrollLeft+20+Math.random()*80,y:tb.scrollTop+20+Math.random()*80,c:COLORS[Math.random()*5|0]});render();
+  put(id,setPos({t:'',c:COLORS[Math.random()*5|0]},tb.scrollLeft+40+Math.random()*60,tb.scrollTop+30+Math.random()*80));render();
   setTimeout(()=>document.querySelector(`[data-id="${id}"] .t`)?.focus(),0)};
 $('#undo').onclick=()=>{const h=history.pop();if(!h||h.b!==cur)return;commit(h.ops.map(o=>[o.id,o.prev]),false);render()};
 $('#bin').onclick=()=>{showBin=!showBin;render()};
