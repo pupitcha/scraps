@@ -142,7 +142,7 @@ onAuthStateChanged(auth,u=>{
     boards={};snap.forEach(d=>boards[d.id]={id:d.id,...d.data()});
     if(!Object.keys(boards).length){await newBoard('Board 1');return}
     if(!boards[cur])cur=sortedBoards()[0].id;
-    if(!dragging&&!editing())render();
+    if(!dragging)render();
   });
 });
 const ref=id=>doc(db,'users',user.uid,'boards',id);
@@ -154,15 +154,23 @@ function commit(list,undo=true){
   const b=B();b.groups??={};
   if(undo)history.push({b:cur,ops:list.map(([id])=>({id,prev:b.scraps[id]||null}))});
   const upd={},now=Date.now();
-  list.forEach(([id,s])=>{b.scraps[id]=s||undefined;upd['scraps.'+id]=s?{...s,ts:now}:deleteField()});
+  // write only the fields that changed, so edits from another device to other fields are never overwritten
+  const diff=(id,p,s)=>{
+    if(!s){upd['scraps.'+id]=deleteField();return}
+    if(!p){upd['scraps.'+id]={...s,ts:now};return}
+    const full=upd['scraps.'+id];
+    new Set([...Object.keys(p),...Object.keys(s)]).forEach(k=>{if(k==='ts'||p[k]===s[k])return;
+      if(full)full[k]=s[k];else upd[`scraps.${id}.${k}`]=s[k]===undefined?deleteField():s[k]});
+    if(!full)upd[`scraps.${id}.ts`]=now};
+  list.forEach(([id,s])=>{const p=b.scraps[id];b.scraps[id]=s||undefined;diff(id,p,s)});
   const n={};Object.values(b.scraps).forEach(s=>s&&s.g&&!s.bin&&(n[s.g]=(n[s.g]||0)+1));
   Object.keys(b.groups).forEach(g=>{if(n[g]>=2)return;delete b.groups[g];upd['groups.'+g]=deleteField();
-    Object.entries(b.scraps).forEach(([id,s])=>{if(s&&s.g===g){b.scraps[id]=s={...s,g:null};upd['scraps.'+id]={...s,ts:now}}})});
+    Object.entries(b.scraps).forEach(([id,s])=>{if(s&&s.g===g){const p=s;b.scraps[id]={...s,g:null};diff(id,p,b.scraps[id])}})});
   updateDoc(ref(cur),upd);
 }
 const put=(id,s,undo=true)=>commit([[id,s]],undo);
 const gOf=(b,s)=>s&&s.g&&!s.bin&&b.groups?.[s.g]?s.g:null;
-const PAD=40;
+let PAD=40;
 const cvEl=id=>$('#canvas').querySelector(`[data-id="${id}"]`);
 const editing=()=>!!document.activeElement?.closest?.('.t,.gn');
 // Rich text: notes keep an HTML copy (s.h) limited to <b> <i> <u> <br>; s.t stays the plain text.
@@ -213,133 +221,179 @@ fbar.addEventListener('pointerdown',e=>{e.preventDefault();const k=e.target.data
   document.execCommand(CMD[k]);fbarState();saveCur&&saveCur()});
 addEventListener('pagehide',()=>document.activeElement?.blur?.());
 document.addEventListener('visibilitychange',()=>document.hidden&&document.activeElement?.blur?.());
-document.fonts?.ready.then(()=>{if(user&&B()&&!dragging&&!editing())render()});
-// Each device class keeps its own layout: desktop uses x,y; phones use qx,qy.
+document.fonts?.ready.then(()=>{if(user&&B()&&!dragging)render()});
+// Layout: desktop keeps free placement (x,y). Phones lay the same notes out automatically: groups as tidy
+// blocks, loose notes flowing in rows, in the desktop's reading order. Phones never store positions.
 const mob=()=>innerWidth<=700||(innerHeight<=500&&innerWidth<=1000);
-const PK=()=>mob()?['qx','qy']:['x','y'];
-const px=s=>{const[k,l]=PK();return[s[k]??0,s[l]??0]};
-const setPos=(s,x,y)=>{const[k,l]=PK();return{...s,[k]:Math.round(x),[l]:Math.round(y)}};
-const clampX=(x,d)=>Math.max(0,mob()?Math.min(x,$('#table').clientWidth-d.offsetWidth-4):x);
-// scraps with no position on this device class are placed into free space, measured so nothing overlaps; groups stay together
+// desktop: notes with no position yet go into free space; a note that joined a group goes right next to it
 function pack(b){
-  const [kx,ky]=PK(),W=$('#table').clientWidth,M=14,upd={},R=[];
-  const miss=Object.entries(b.scraps).filter(([,s])=>s&&!s.bin&&s[kx]==null).sort((a,c)=>(a[1].ts||0)-(c[1].ts||0));
+  const W=$('#table').clientWidth,M=14,upd={},R=[];
+  const miss=Object.entries(b.scraps).filter(([,s])=>s&&!s.bin&&s.x==null).sort((a,c)=>(a[1].ts||0)-(c[1].ts||0));
   if(!miss.length)return;
   const skip=new Set(miss.map(([id])=>id)),gb={};
   Object.entries(b.scraps).forEach(([id,s])=>{const n=!skip.has(id)&&s&&!s.bin&&cvEl(id);if(!n)return;
     const r={x:n.offsetLeft,y:n.offsetTop,w:n.offsetWidth,h:n.offsetHeight};R.push(r);const g=gOf(b,s);
     if(g){const o=gb[g]??={x1:1e9,y1:1e9,x2:-1e9,y2:-1e9};o.x1=Math.min(o.x1,r.x);o.y1=Math.min(o.y1,r.y);o.x2=Math.max(o.x2,r.x+r.w);o.y2=Math.max(o.y2,r.y+r.h)}});
-  Object.values(gb).forEach(o=>R.push({x:o.x1-PAD,y:o.y1-PAD-16,w:o.x2-o.x1+2*PAD,h:o.y2-o.y1+2*PAD+16}));
-  const free=(w,h,y0)=>{for(let y=Math.max(16,y0);;y+=16)for(let x=16;x===16||x+w<=W-16;x+=16)
-    if(!R.some(r=>x<r.x+r.w+M&&x+w+M>r.x&&y<r.y+r.h+M&&y+h+M>r.y))return[x,y]};
-  const set=(id,x,y)=>{const n=cvEl(id);n.style.left=x+'px';n.style.top=y+'px';b.scraps[id]={...b.scraps[id],[kx]:x,[ky]:y};
-    upd['scraps.'+id+'.'+kx]=x;upd['scraps.'+id+'.'+ky]=y};
+  Object.entries(gb).forEach(([g,o])=>R.push({o:g,x:o.x1-PAD,y:o.y1-PAD-20,w:o.x2-o.x1+2*PAD,h:o.y2-o.y1+2*PAD+20}));
+  const clear=(x,y,w,h,g)=>!R.some(r=>(!g||r.o!==g)&&x<r.x+r.w+M&&x+w+M>r.x&&y<r.y+r.h+M&&y+h+M>r.y);
+  const free=(w,h,y0)=>{for(let y=Math.max(16,y0);;y+=16)for(let x=16;x===16||x+w<=W-16;x+=16)if(clear(x,y,w,h))return[x,y]};
+  const set=(id,x,y)=>{const n=cvEl(id);n.style.left=x+'px';n.style.top=y+'px';b.scraps[id]={...b.scraps[id],x,y};
+    upd['scraps.'+id+'.x']=x;upd['scraps.'+id+'.y']=y};
   const top=$('#table').scrollTop,gm={},singles=[];
   miss.forEach(([id,s])=>{const g=gOf(b,s);g&&!gb[g]?(gm[g]??=[]).push(id):singles.push(id)});
   Object.values(gm).forEach(ids=>{ // whole group new here: lay members out in wrapped rows inside one outline
     const inner=Math.max(160,W-2*PAD-32);let cx=0,cy=0,rh=0,cw=0;const pos=[];
     ids.forEach(id=>{const n=cvEl(id),w=n.offsetWidth,h=n.offsetHeight;if(cx&&cx+w>inner){cx=0;cy+=rh+12;rh=0}
       pos.push([id,cx,cy]);cx+=w+12;cw=Math.max(cw,cx-12);rh=Math.max(rh,h)});
-    const w=cw+2*PAD,h=cy+rh+2*PAD+16,[X,Y]=free(w,h,top);R.push({x:X,y:Y,w,h});
-    pos.forEach(([id,x,y])=>set(id,X+PAD+x,Y+16+PAD+y))});
-  singles.forEach(id=>{const n=cvEl(id),g=gOf(b,b.scraps[id]),w=n.offsetWidth,h=n.offsetHeight;
-    const[x,y]=free(w,h,g&&gb[g]?gb[g].y1:top);R.push({x,y,w,h});set(id,x,y)});
+    const w=cw+2*PAD,h=cy+rh+2*PAD+20,[X,Y]=free(w,h,top);R.push({x:X,y:Y,w,h});
+    pos.forEach(([id,x,y])=>set(id,X+PAD+x,Y+20+PAD+y))});
+  singles.forEach(id=>{const n=cvEl(id),g=gOf(b,b.scraps[id]),w=n.offsetWidth,h=n.offsetHeight,o=g&&gb[g];let p=null;
+    if(o)for(const[x,y]of[[o.x2+12,o.y1],[o.x1,o.y2+12],[o.x2+12,o.y2-h]])if(clear(x,y,w,h,g)){p=[x,y];break}
+    p??=free(w,h,o?o.y1:top);
+    if(o){o.x2=Math.max(o.x2,p[0]+w);o.y2=Math.max(o.y2,p[1]+h)}
+    R.push({x:p[0],y:p[1],w,h});set(id,p[0],p[1])});
   updateDoc(ref(cur),upd);
 }
+// phone: automatic layout, recomputed on every render (no data written)
+function flow(b){
+  const W=$('#table').clientWidth,L=14,G=10,rank=s=>[s.y??1e9,s.x??0,s.ts??0];
+  const list=Object.entries(b.scraps).filter(([id,s])=>s&&!s.bin&&cvEl(id))
+    .sort((a,c)=>{const A=rank(a[1]),C=rank(c[1]);return A[0]-C[0]||A[1]-C[1]||A[2]-C[2]});
+  const units=[],gm={};
+  list.forEach(([id,s])=>{const g=gOf(b,s);if(!g)return units.push({id});if(!gm[g]){gm[g]=[];units.push({ids:gm[g]})}gm[g].push(id)});
+  const put_=(id,x,y)=>{const n=cvEl(id);if(n.classList.contains('drag'))return;n.style.left=x+'px';n.style.top=y+'px'};
+  let x=L,y=16,rh=0;
+  units.forEach(u=>{
+    if(u.id){const n=cvEl(u.id),w=n.offsetWidth;if(x>L&&x+w>W-L){x=L;y+=rh+G;rh=0}put_(u.id,x,y);x+=w+G;rh=Math.max(rh,n.offsetHeight);return}
+    if(x>L){y+=rh+G;x=L;rh=0}
+    y+=26;const x0=L+PAD,xr=W-L-PAD;let cx=x0,cy=y+PAD,r=0;
+    u.ids.forEach(id=>{const n=cvEl(id),w=n.offsetWidth;if(cx>x0&&cx+w>xr){cx=x0;cy+=r+G;r=0}put_(id,cx,cy);cx+=w+G;r=Math.max(r,n.offsetHeight)});
+    y=cy+r+PAD+G+6;x=L;rh=0});
+}
 
+let tabsSig='';
 function render(){
-  const b=B();if(!b)return;theme(b);
-  $('#bar').innerHTML='';
-  sortedBoards().forEach(x=>{const e=document.createElement('button');e.textContent=x.name;e.className=x.id===cur?'on':'';
-    e.onclick=()=>{cur=x.id;localStorage.cur=cur;render()};$('#bar').append(e)});
-  const plus=document.createElement('button');plus.textContent='\uFF0B';plus.onclick=()=>{const n=prompt('Board name');n&&newBoard(n)};$('#bar').append(plus);
+  const b=B();if(!b)return;theme(b);PAD=mob()?24:40;
+  const sig=JSON.stringify(sortedBoards().map(x=>[x.id,x.name]))+cur;
+  if(sig!==tabsSig){tabsSig=sig;$('#bar').innerHTML='';
+    sortedBoards().forEach(x=>{const e=document.createElement('button');e.textContent=x.name;e.className=x.id===cur?'on':'';
+      e.onclick=()=>{cur=x.id;localStorage.cur=cur;render()};$('#bar').append(e)});
+    const plus=document.createElement('button');plus.textContent='\uFF0B';plus.onclick=()=>{const n=prompt('Board name');n&&newBoard(n)};$('#bar').append(plus)}
   const all=Object.entries(b.scraps||{}).filter(([,s])=>s);
   $('#bn').textContent=all.filter(([,s])=>s.bin).length;
   $('#bin').classList.toggle('on',showBin);
-  const cv=$('#canvas');cv.innerHTML='';
-  const shown=all.filter(([,s])=>!!s.bin===showBin),gs={};
-  shown.forEach(([id,s])=>{cv.append(el(id,s));const g=!showBin&&gOf(b,s);if(g)(gs[g]??=[]).push(id)});
-  if(!showBin)pack(b);
-  Object.entries(gs).forEach(([g,ids])=>cv.append(gEl(g,ids)));
+  const cv=$('#canvas'),shown=new Map(all.filter(([,s])=>!!s.bin===showBin));
+  // update notes in place (never rebuild): a note under your finger/mouse or being typed in stays put
+  cv.querySelectorAll('.s').forEach(n=>{if(!shown.has(n.dataset.id))n.remove()});
+  shown.forEach((s,id)=>{let d=cvEl(id);if(!d){d=el(id);cv.append(d)}upd(d,id,s)});
+  if(!showBin)(mob()?flow:pack)(b);
+  groups(b,cv);
   const bot=Math.max(0,...[...cv.children].map(n=>n.offsetTop+n.offsetHeight));
-  cv.style.height=Math.max($('#table').clientHeight,bot+260)+'px';
+  cv.style.height=Math.max($('#table').clientHeight,bot+(mob()?120:260))+'px';
 }
-// bounding box (canvas coords) of a group's scraps, optionally excluding one
+function upd(d,id,s){
+  const dr=d.classList.contains('drag');d.className='s'+(s.big?' big':'')+(dr?' drag':'');
+  if(!mob()&&!dr&&s.x!=null){d.style.left=s.x+'px';d.style.top=s.y+'px'}
+  d.style.transform=`rotate(${id.charCodeAt(0)%5-2}deg)`;paint(d,id,s);
+  const t=d.firstChild;t.className='t'+(s.b?' b':'')+(s.i?' i':'')+(s.u?' u':'');t.contentEditable=!s.bin;
+  if(t!==document.activeElement){const h=clean(hOf(s));if(t.innerHTML!==h)t.innerHTML=h}
+  let x=d.querySelector('.x');
+  if(s.bin&&!x){x=document.createElement('span');x.className='x';x.textContent='\u21BA Restore';
+    x.onclick=e=>{e.stopPropagation();put(id,{...B().scraps[id],bin:false});render()};d.append(x)}
+  else if(!s.bin&&x)x.remove();
+}
+// bounding box (canvas coords) of a group's notes, optionally excluding one
 function gbox(gid,ex){
   let x1=1e9,y1=1e9,x2=-1e9,y2=-1e9;
   Object.entries(B().scraps).forEach(([id,s])=>{if(id===ex||!s||s.g!==gid||s.bin)return;const n=cvEl(id);if(!n)return;
     x1=Math.min(x1,n.offsetLeft);y1=Math.min(y1,n.offsetTop);x2=Math.max(x2,n.offsetLeft+n.offsetWidth);y2=Math.max(y2,n.offsetTop+n.offsetHeight)});
   return x2<0?null:{x1,y1,x2,y2};
 }
-// generic pointer drag: move(dx,dy) live, end(dx,dy) on drop, tap() if it never moved
-function drag(node,e,{move,end,tap,cap}){
-  const sx=e.clientX,sy=e.clientY;let moved=false;
-  const mv=ev=>{const dx=ev.clientX-sx,dy=ev.clientY-sy;if(!moved&&Math.hypot(dx,dy)<5)return;
-    if(!moved){moved=true;dragging=true;node.setPointerCapture(e.pointerId);cap&&cap()}move(dx,dy)};
-  const up=ev=>{['pointermove','pointerup','pointercancel'].forEach(k=>node.removeEventListener(k,k==='pointermove'?mv:up));
-    if(!moved){tap&&tap();return}dragging=false;end(ev.clientX-sx,ev.clientY-sy)};
-  node.addEventListener('pointermove',mv);node.addEventListener('pointerup',up);node.addEventListener('pointercancel',up);
+// pointer drag tracked on the window, so it can never get stuck if the page updates mid-drag
+function drag(e,{move,end,tap,cap}){
+  const sx=e.clientX,sy=e.clientY,pid=e.pointerId;let moved=false,dx=0,dy=0;
+  const mv=ev=>{if(ev.pointerId!==pid)return;dx=ev.clientX-sx;dy=ev.clientY-sy;if(!moved&&Math.hypot(dx,dy)<6)return;
+    if(!moved){moved=true;dragging=true;cap&&cap()}ev.preventDefault();move(dx,dy)};
+  const up=ev=>{if(ev.pointerId!==pid)return;removeEventListener('pointermove',mv);removeEventListener('pointerup',up);removeEventListener('pointercancel',up);
+    if(!moved){if(ev.type==='pointerup')tap&&tap();return}
+    if(ev.type==='pointerup'){dx=ev.clientX-sx;dy=ev.clientY-sy}
+    dragging=false;try{end(dx,dy)}catch(err){console.error(err);render()}};
+  addEventListener('pointermove',mv,{passive:false});addEventListener('pointerup',up);addEventListener('pointercancel',up);
 }
-function gEl(gid,ids){
-  const b=B(),bb=gbox(gid),g=document.createElement('div');g.className='grp';g.dataset.gid=gid;
-  const L=bb.x1-PAD,T=bb.y1-PAD;
-  const W=bb.x2-bb.x1+2*PAD,H=bb.y2-bb.y1+2*PAD,sd=scribble(W,H,hash(gid));
-  g.style.cssText=`left:${L}px;top:${T}px;width:${W}px;height:${H}px`;
-  g.innerHTML=`<svg class="scr" width="${W}" height="${H}"><path class="f" d="${sd}Z"/><path class="o" d="${sd}"/></svg>`;
-  const nm=document.createElement('div');nm.className='gn';nm.contentEditable=true;nm.dataset.ph='name this';nm.textContent=b.groups[gid].name||'';
-  let nt;nm.oninput=()=>{clearTimeout(nt);nt=setTimeout(()=>{const v=nm.textContent.trim();if(b.groups[gid]){b.groups[gid].name=v;updateDoc(ref(cur),{['groups.'+gid+'.name']:v})}},500)};
-  nm.onblur=()=>{clearTimeout(nt);const v=nm.textContent.trim();if(b.groups[gid]&&v!==(b.groups[gid].name||'')){b.groups[gid].name=v;updateDoc(ref(cur),{['groups.'+gid+'.name']:v})}if(!dragging)render()};
+function groups(b,cv){
+  const keep=document.activeElement?.closest?.('.grp'),live={};
+  if(!showBin)Object.entries(b.scraps).forEach(([id,s])=>{const g=gOf(b,s);if(g&&cvEl(id))(live[g]??=[]).push(id)});
+  cv.querySelectorAll('.grp').forEach(n=>{if(n!==keep||!live[n.dataset.gid])n.remove()});
+  Object.keys(live).forEach(gid=>{let g=keep&&keep.dataset.gid===gid&&keep.isConnected?keep:null;if(!g){g=gEl(gid);cv.append(g)}geo(g,gid)});
+}
+function geo(g,gid){
+  const bb=gbox(gid);if(!bb)return;const W=bb.x2-bb.x1+2*PAD,H=bb.y2-bb.y1+2*PAD,sd=scribble(W,H,hash(gid));
+  g.style.cssText=`left:${bb.x1-PAD}px;top:${bb.y1-PAD}px;width:${W}px;height:${H}px`;
+  g.querySelector('svg')?.remove();
+  g.insertAdjacentHTML('afterbegin',`<svg class="scr" width="${W}" height="${H}"><path class="f" d="${sd}Z"/><path class="o" d="${sd}"/></svg>`);
+  const nm=g.querySelector('.gn');if(nm!==document.activeElement)nm.textContent=B().groups?.[gid]?.name||'';
+}
+function gEl(gid){
+  const g=document.createElement('div');g.className='grp';g.dataset.gid=gid;
+  const nm=document.createElement('div');nm.className='gn';nm.contentEditable=true;nm.dataset.ph='name this';
+  const saveName=()=>{const v=nm.textContent.trim(),gr=B()?.groups?.[gid];if(gr&&v!==(gr.name||'')){gr.name=v;updateDoc(ref(cur),{['groups.'+gid+'.name']:v})}};
+  let nt;nm.oninput=()=>{clearTimeout(nt);nt=setTimeout(saveName,500)};
+  nm.onblur=()=>{clearTimeout(nt);saveName();if(!dragging)render()};
   nm.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();nm.blur()}};
   g.append(nm);
   g.onpointerdown=e=>{
     if(e.target===nm&&document.activeElement===nm)return;
-    const ox=Object.fromEntries(ids.map(i=>[i,px(b.scraps[i])]));
+    if(mob())return; // phone: groups are laid out automatically; tap the name to rename
+    const b=B(),ids=Object.keys(b.scraps).filter(i=>gOf(b,b.scraps[i])===gid&&cvEl(i));
+    const ox=Object.fromEntries(ids.map(i=>[i,[cvEl(i).offsetLeft,cvEl(i).offsetTop]])),L=g.offsetLeft,T=g.offsetTop;
     if(e.pointerType==='mouse')e.preventDefault();
-    drag(g,e,{cap:()=>nm.blur(),tap:()=>e.target===nm&&nm.focus(),
-      move:(dx,dy)=>{g.style.left=L+dx+'px';g.style.top=T+dy+'px';ids.forEach(i=>{const n=cvEl(i);n.style.left=ox[i][0]+dx+'px';n.style.top=ox[i][1]+dy+'px'})},
+    drag(e,{cap:()=>nm.blur(),tap:()=>e.target===nm&&nm.focus(),
+      move:(dx,dy)=>{g.style.left=L+dx+'px';g.style.top=T+dy+'px';ids.forEach(i=>{const n=cvEl(i);if(n){n.style.left=ox[i][0]+dx+'px';n.style.top=ox[i][1]+dy+'px'}})},
       end:(dx,dy)=>{const cl=Math.max(dx,...ids.map(i=>-ox[i][0])),ct=Math.max(dy,...ids.map(i=>-ox[i][1]));
-        commit(ids.map(i=>[i,setPos(b.scraps[i],ox[i][0]+cl,ox[i][1]+ct)]));render()}});
+        commit(ids.filter(i=>B().scraps[i]).map(i=>[i,{...B().scraps[i],x:Math.round(ox[i][0]+cl),y:Math.round(ox[i][1]+ct)}]));render()}});
   };
   return g;
 }
-function el(id,s){
-  const d=document.createElement('div');d.className='s'+(s.big?' big':'');d.dataset.id=id;
-  d.style.cssText+=`left:${px(s)[0]}px;top:${px(s)[1]}px;transform:rotate(${(id.charCodeAt(0)%5-2)}deg)`;paint(d,id,s);
-  const t=document.createElement('div');t.className='t'+(s.b?' b':'')+(s.i?' i':'')+(s.u?' u':'');t.contentEditable=!s.bin;t.innerHTML=clean(hOf(s));
+function el(id){
+  const d=document.createElement('div');d.dataset.id=id;
+  const t=document.createElement('div');d.append(t);
   // saves while typing/formatting (debounced) so closing the tab loses nothing; one undo step per edit session
-  let tt,orig;t.onfocus=()=>{orig=B().scraps[id];saveCur=save};
-  t.onpaste=e=>{e.preventDefault();document.execCommand('insertText',false,e.clipboardData.getData('text/plain'))};
+  let tt,orig=null;
   function save(){clearTimeout(tt);const c=B().scraps[id];if(!c)return;const r=ser(t);c.t=r.t;c.h=r.h;
     updateDoc(ref(cur),{['scraps.'+id+'.t']:r.t,['scraps.'+id+'.h']:r.h,['scraps.'+id+'.ts']:Date.now()})}
+  t.onfocus=()=>{orig=B().scraps[id];saveCur=save};
+  t.onpaste=e=>{e.preventDefault();document.execCommand('insertText',false,e.clipboardData.getData('text/plain'))};
   t.oninput=()=>{clearTimeout(tt);tt=setTimeout(save,500)};
   t.onblur=()=>{clearTimeout(tt);const c=B().scraps[id];
     if(c&&orig){const r=ser(t);if(r.h!==clean(hOf(orig))){history.push({b:cur,ops:[{id,prev:orig}]});put(id,{...c,t:r.t,h:r.h},false)}}
-    if(!dragging)render()};
-  d.append(t);
-  if(s.bin){const x=document.createElement('span');x.className='x';x.textContent='\u21ba Restore';
-    x.onclick=e=>{e.stopPropagation();put(id,{...B().scraps[id],bin:false})};d.append(x)}
+    orig=null;if(!dragging)render()};
   d.onpointerdown=e=>{
     if(e.target===t&&document.activeElement===t)return;
     if(e.target.closest('.x'))return;
     if(e.pointerType==='mouse')e.preventDefault();
-    drag(d,e,{cap:()=>{d.classList.add('drag');t.blur()},tap:()=>t.focus(),
-      move:(dx,dy)=>{const p=px(s);d.style.left=p[0]+dx+'px';d.style.top=p[1]+dy+'px';
+    const ox=d.offsetLeft,oy=d.offsetTop;
+    drag(e,{cap:()=>{d.classList.add('drag');t.blur()},tap:()=>t.focus(),
+      move:(dx,dy)=>{d.style.left=ox+dx+'px';d.style.top=oy+dy+'px';
         const h=hit(d);document.querySelectorAll('.tgt').forEach(n=>n.classList.remove('tgt'));h&&h.classList.add('tgt')},
-      end:(dx,dy)=>drop(id,d,dx,dy)});
+      end:(dx,dy)=>{d.classList.remove('drag');document.querySelectorAll('.tgt').forEach(n=>n.classList.remove('tgt'));drop(id,d,dx,dy,ox,oy)}});
   };
   return d;
 }
-function drop(id,d,dx,dy){
-  const b=B(),s=b.scraps[id],p0=px(s),nx=clampX(p0[0]+dx,d),ny=Math.max(0,p0[1]+dy),h=s.bin?null:hit(d);
-  if(h){ // dropped onto a scrap: join its group, or start a new one
+const noPos=o=>{const c={...o};delete c.x;delete c.y;return c};
+function drop(id,d,dx,dy,ox,oy){
+  const b=B(),s=b.scraps[id];if(!s)return render();
+  const M=mob(),nx=Math.max(0,ox+dx),ny=Math.max(0,oy+dy),h=s.bin?null:hit(d);
+  if(h&&b.scraps[h.dataset.id]){ // dropped onto a note: join its group, or start a new one
     const tid=h.dataset.id,t=b.scraps[tid],ch=[];let gid=gOf(b,t);
-    if(!gid){gid=uid8();b.groups??={};b.groups[gid]={name:''};updateDoc(ref(cur),{['groups.'+gid]:{name:''}});ch.push([tid,{...t,g:gid}])}
-    b.scraps[tid]={...t,g:gid};const bb=gbox(gid,id);
-    const fit=!mob()||bb.x2+16+d.offsetWidth<=$('#table').clientWidth-8;ch.push([id,setPos({...s,g:gid},fit?bb.x2+16:bb.x1,fit?px(t)[1]:bb.y2+12)]);commit(ch);
+    if(!gid){gid=uid8();b.groups??={};b.groups[gid]={name:''};updateDoc(ref(cur),{['groups.'+gid]:{name:''}});ch.push([tid,{...t,g:gid}]);b.scraps[tid]={...t,g:gid}}
+    if(M){if(gOf(b,s)!==gid)ch.push([id,noPos({...s,g:gid})])} // desktop will seat it beside the group
+    else{const bb=gbox(gid,id);ch.push([id,{...s,g:gid,x:Math.round(bb.x2+16),y:Math.round(t.y??bb.y1)}])}
+    if(ch.length)commit(ch);
   }else{ // otherwise: is its centre inside a group's outline?
     const cx=nx+d.offsetWidth/2,cy=ny+d.offsetHeight/2;let g=null;
-    Object.keys(b.groups||{}).forEach(gid=>{const bb=gbox(gid,id);if(bb&&cx>bb.x1-PAD&&cx<bb.x2+PAD&&cy>bb.y1-PAD&&cy<bb.y2+PAD)g=gid});
-    commit([[id,setPos({...s,g:s.bin?null:g},nx,ny)]]);
+    if(!s.bin)Object.keys(b.groups||{}).forEach(gid=>{const bb=gbox(gid,id);if(bb&&cx>bb.x1-PAD&&cx<bb.x2+PAD&&cy>bb.y1-PAD&&cy<bb.y2+PAD)g=gid});
+    if(M){if(gOf(b,s)!==g)commit([[id,noPos({...s,g})]])}
+    else commit([[id,{...s,x:Math.round(nx),y:Math.round(ny),g}]]);
   }
   render();
 }
@@ -348,7 +402,7 @@ function hit(d){const r=d.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r
 
 $('#add').onclick=()=>{const tb=$('#table');const id=uid8();showBin=false;
   put(id,{t:"",r:rand32()});render();
-  setTimeout(()=>document.querySelector(`[data-id="${id}"] .t`)?.focus(),0)};
+  setTimeout(()=>{const n=cvEl(id);n?.scrollIntoView({block:"center",behavior:"smooth"});n?.firstChild.focus()},0)};
 $('#undo').onclick=()=>{const h=history.pop();if(!h||h.b!==cur)return;commit(h.ops.map(o=>[o.id,o.prev]),false);render()};
 $('#bin').onclick=()=>{showBin=!showBin;render()};
 $('#menu').onclick=()=>{
