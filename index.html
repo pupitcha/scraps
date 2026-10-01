@@ -33,7 +33,9 @@ button.on{background:var(--ink);color:var(--bar);border-color:var(--ink)}
 .grp{position:absolute;z-index:1;touch-action:none;cursor:grab}
 .scr{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
 .scr .o{fill:none;stroke:var(--acc);stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
-.scr .f{fill:var(--acc);opacity:.07}
+.scr .f{fill:var(--acc);opacity:.07;transition:opacity .15s}
+.scr .o{transition:stroke-width .15s}
+.grp.over .f{opacity:.2}.grp.over .o{stroke-width:4.5}.s.tgt{outline:3px dashed var(--acc);outline-offset:3px}
 .gn{font-family:Montserrat,'IBM Plex Sans Thai',sans-serif;font-weight:500;position:absolute;left:50%;top:-20px;transform:translateX(-50%);background:var(--bar);color:var(--acc);border:2px solid var(--acc);border-radius:99px;padding:3px 18px;font-size:19px;line-height:1.3;letter-spacing:.02em;white-space:nowrap;min-width:70px;text-align:center;outline:none;user-select:text;cursor:text}
 .gn:empty:before{content:attr(data-ph);opacity:.5}
 @media(max-width:700px),(max-height:500px) and (max-width:1000px){#canvas{width:100%!important}#table{overflow-x:hidden}.s{max-width:min(220px,calc(50vw - 24px))}.s.big{max-width:min(280px,calc(70vw - 24px))}#tools button,#bar button{padding:5px 10px}}
@@ -318,17 +320,39 @@ function gbox(gid,ex){
     x1=Math.min(x1,n.offsetLeft);y1=Math.min(y1,n.offsetTop);x2=Math.max(x2,n.offsetLeft+n.offsetWidth);y2=Math.max(y2,n.offsetTop+n.offsetHeight)});
   return x2<0?null:{x1,y1,x2,y2};
 }
-// pointer drag tracked on the window, so it can never get stuck if the page updates mid-drag
+// pointer drag tracked on the window, so it can never get stuck if the page updates mid-drag.
+// Holding near the top/bottom (or side) edge of the board auto-scrolls it, so a note can be carried to a group far away.
 function drag(e,{move,end,tap,cap}){
-  const sx=e.clientX,sy=e.clientY,pid=e.pointerId;let moved=false,dx=0,dy=0;
-  const mv=ev=>{if(ev.pointerId!==pid)return;dx=ev.clientX-sx;dy=ev.clientY-sy;if(!moved&&Math.hypot(dx,dy)<6)return;
-    if(!moved){moved=true;dragging=true;cap&&cap()}ev.preventDefault();move(dx,dy)};
-  const up=ev=>{if(ev.pointerId!==pid)return;removeEventListener('pointermove',mv);removeEventListener('pointerup',up);removeEventListener('pointercancel',up);
+  const tb=$('#table'),sx=e.clientX,sy=e.clientY,pid=e.pointerId,s0=[tb.scrollLeft,tb.scrollTop];
+  let moved=false,cx=sx,cy=sy,raf=0;
+  const delta=()=>[cx-sx+tb.scrollLeft-s0[0],cy-sy+tb.scrollTop-s0[1]];
+  const tick=()=>{raf=0;if(!moved)return;const r=tb.getBoundingClientRect(),E=72,sp=d=>Math.min(26,Math.ceil(d/5));let vx=0,vy=0;
+    if(cy<r.top+E)vy=-sp(r.top+E-cy);else if(cy>r.bottom-E)vy=sp(cy-(r.bottom-E));
+    if(!mob()){if(cx<r.left+E)vx=-sp(r.left+E-cx);else if(cx>r.right-E)vx=sp(cx-(r.right-E))}
+    if(vx||vy){tb.scrollTop+=vy;tb.scrollLeft+=vx;const[dx,dy]=delta();move(dx,dy);raf=requestAnimationFrame(tick)}};
+  const mv=ev=>{if(ev.pointerId!==pid)return;cx=ev.clientX;cy=ev.clientY;if(!moved&&Math.hypot(cx-sx,cy-sy)<6)return;
+    if(!moved){moved=true;dragging=true;cap&&cap()}ev.preventDefault();const[dx,dy]=delta();move(dx,dy);if(!raf)raf=requestAnimationFrame(tick)};
+  const up=ev=>{if(ev.pointerId!==pid)return;cancelAnimationFrame(raf);
+    removeEventListener('pointermove',mv);removeEventListener('pointerup',up);removeEventListener('pointercancel',up);
     if(!moved){if(ev.type==='pointerup')tap&&tap();return}
-    if(ev.type==='pointerup'){dx=ev.clientX-sx;dy=ev.clientY-sy}
-    dragging=false;try{end(dx,dy)}catch(err){console.error(err);render()}};
+    if(ev.type==='pointerup'){cx=ev.clientX;cy=ev.clientY}
+    const[dx,dy]=delta();dragging=false;try{end(dx,dy)}catch(err){console.error(err);render()}};
   addEventListener('pointermove',mv,{passive:false});addEventListener('pointerup',up);addEventListener('pointercancel',up);
 }
+// which group's outline is the dragged note over right now (null = none)
+function groupAt(id,d){
+  const b=B(),h=hit(d),hs=h&&b.scraps[h.dataset.id];if(hs&&gOf(b,hs))return gOf(b,hs);
+  const cx=d.offsetLeft+d.offsetWidth/2,cy=d.offsetTop+d.offsetHeight/2;let g=null;
+  Object.keys(b.groups||{}).forEach(gid=>{const bb=gbox(gid,id);if(bb&&cx>bb.x1-PAD&&cx<bb.x2+PAD&&cy>bb.y1-PAD&&cy<bb.y2+PAD)g=gid});
+  return g;
+}
+function showTarget(id,d){
+  const g=groupAt(id,d),h=hit(d);
+  document.querySelectorAll('.tgt').forEach(n=>n!==h&&n.classList.remove('tgt'));h&&h.classList.add('tgt');
+  document.querySelectorAll('.grp.over').forEach(n=>n.dataset.gid!==g&&n.classList.remove('over'));
+  if(g)document.querySelector(`.grp[data-gid="${g}"]`)?.classList.add('over');
+}
+const clearTarget=()=>document.querySelectorAll('.tgt,.grp.over').forEach(n=>n.classList.remove('tgt','over'));
 function groups(b,cv){
   const keep=document.activeElement?.closest?.('.grp'),live={};
   if(!showBin)Object.entries(b.scraps).forEach(([id,s])=>{const g=gOf(b,s);if(g&&cvEl(id))(live[g]??=[]).push(id)});
@@ -386,8 +410,8 @@ function el(id){
     const ox=d.offsetLeft,oy=d.offsetTop;
     drag(e,{cap:()=>{d.classList.add('drag');t.blur()},tap:()=>t.focus(),
       move:(dx,dy)=>{d.style.left=ox+dx+'px';d.style.top=oy+dy+'px';
-        const h=hit(d);document.querySelectorAll('.tgt').forEach(n=>n.classList.remove('tgt'));h&&h.classList.add('tgt')},
-      end:(dx,dy)=>{d.classList.remove('drag');document.querySelectorAll('.tgt').forEach(n=>n.classList.remove('tgt'));drop(id,d,dx,dy,ox,oy)}});
+        showTarget(id,d)},
+      end:(dx,dy)=>{d.classList.remove('drag');clearTarget();drop(id,d,dx,dy,ox,oy)}});
   };
   return d;
 }
