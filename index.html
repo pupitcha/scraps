@@ -225,54 +225,59 @@ document.fonts?.ready.then(()=>{if(user&&B()&&!dragging)render()});
 // Layout: desktop keeps free placement (x,y). Phones lay the same notes out automatically: groups as tidy
 // blocks, loose notes flowing in rows, in the desktop's reading order. Phones never store positions.
 const mob=()=>innerWidth<=700||(innerHeight<=500&&innerWidth<=1000);
-// desktop: notes with no position yet go into free space; a note that joined a group goes right next to it
-function pack(b){
-  const W=$('#table').clientWidth,M=14,upd={},R=[];
-  const miss=Object.entries(b.scraps).filter(([,s])=>s&&!s.bin&&s.x==null).sort((a,c)=>(a[1].ts||0)-(c[1].ts||0));
-  if(!miss.length)return;
-  const skip=new Set(miss.map(([id])=>id)),gb={};
-  Object.entries(b.scraps).forEach(([id,s])=>{const n=!skip.has(id)&&s&&!s.bin&&cvEl(id);if(!n)return;
-    const r={x:n.offsetLeft,y:n.offsetTop,w:n.offsetWidth,h:n.offsetHeight};R.push(r);const g=gOf(b,s);
-    if(g){const o=gb[g]??={x1:1e9,y1:1e9,x2:-1e9,y2:-1e9};o.x1=Math.min(o.x1,r.x);o.y1=Math.min(o.y1,r.y);o.x2=Math.max(o.x2,r.x+r.w);o.y2=Math.max(o.y2,r.y+r.h)}});
-  Object.entries(gb).forEach(([g,o])=>R.push({o:g,x:o.x1-PAD,y:o.y1-PAD-20,w:o.x2-o.x1+2*PAD,h:o.y2-o.y1+2*PAD+20}));
-  const clear=(x,y,w,h,g)=>!R.some(r=>(!g||r.o!==g)&&x<r.x+r.w+M&&x+w+M>r.x&&y<r.y+r.h+M&&y+h+M>r.y);
-  const free=(w,h,y0)=>{for(let y=Math.max(16,y0);;y+=16)for(let x=16;x===16||x+w<=W-16;x+=16)if(clear(x,y,w,h))return[x,y]};
-  const set=(id,x,y)=>{const n=cvEl(id);n.style.left=x+'px';n.style.top=y+'px';b.scraps[id]={...b.scraps[id],x,y};
-    upd['scraps.'+id+'.x']=x;upd['scraps.'+id+'.y']=y};
-  const top=$('#table').scrollTop,gm={},singles=[];
-  miss.forEach(([id,s])=>{const g=gOf(b,s);g&&!gb[g]?(gm[g]??=[]).push(id):singles.push(id)});
-  Object.values(gm).forEach(ids=>{ // whole group new here: lay members out in wrapped rows inside one outline
-    const inner=Math.max(160,W-2*PAD-32);let cx=0,cy=0,rh=0,cw=0;const pos=[];
-    ids.forEach(id=>{const n=cvEl(id),w=n.offsetWidth,h=n.offsetHeight;if(cx&&cx+w>inner){cx=0;cy+=rh+12;rh=0}
-      pos.push([id,cx,cy]);cx+=w+12;cw=Math.max(cw,cx-12);rh=Math.max(rh,h)});
-    const w=cw+2*PAD,h=cy+rh+2*PAD+20,[X,Y]=free(w,h,top);R.push({x:X,y:Y,w,h});
-    pos.forEach(([id,x,y])=>set(id,X+PAD+x,Y+20+PAD+y))});
-  singles.forEach(id=>{const n=cvEl(id),g=gOf(b,b.scraps[id]),w=n.offsetWidth,h=n.offsetHeight,o=g&&gb[g];let p=null;
-    if(o){ // snuggest free spot: fill gaps inside the group first, otherwise grow its outline as little as possible
-      const A=(o.x2-o.x1)*(o.y2-o.y1),cx=(o.x1+o.x2)/2,cy=(o.y1+o.y2)/2;let best=1e18;
-      for(let y=o.y1-h-12;y<=o.y2+12;y+=8)for(let x=Math.max(16,o.x1-w-12);x<=o.x2+12;x+=8){if(!clear(x,y,w,h,g))continue;
-        const c=(Math.max(o.x2,x+w)-Math.min(o.x1,x))*(Math.max(o.y2,y+h)-Math.min(o.y1,y))-A+Math.hypot(x+w/2-cx,y+h/2-cy);
-        if(c<best){best=c;p=[x,y]}}}
-    p??=free(w,h,o?o.y1:top);
-    if(o){o.x2=Math.max(o.x2,p[0]+w);o.y2=Math.max(o.y2,p[1]+h)}
-    R.push({x:p[0],y:p[1],w,h});set(id,p[0],p[1])});
-  updateDoc(ref(cur),upd);
+// Groups: notes inside a group are always arranged automatically in centred rows, so the outline hugs them.
+// Order inside a group = note.o; a group's spot on the desktop = group.x/y (top-left of its notes).
+const rankOf=(b,ids)=>ids.slice().sort((a,c)=>{const A=b.scraps[a],C=b.scraps[c];
+  return (A.o??1e9)-(C.o??1e9)||(A.y??1e9)-(C.y??1e9)||(A.x??0)-(C.x??0)||(A.ts||0)-(C.ts||0)});
+function members(b){const m={};Object.entries(b.scraps).forEach(([id,s])=>{const g=gOf(b,s);if(g&&cvEl(id))(m[g]??=[]).push(id)});
+  for(const g in m)m[g]=rankOf(b,m[g]);return m}
+function lay(ids,maxW){
+  const G=10,sz=ids.map(id=>{const n=cvEl(id);return[n.offsetWidth,n.offsetHeight]});
+  if(maxW==null){const avg=sz.reduce((a,s)=>a+s[0]+G,0)/ids.length,cols=Math.ceil(Math.sqrt(ids.length));
+    maxW=Math.min(560,Math.max(...sz.map(s=>s[0]),avg*cols))}
+  const rows=[];let row=null;
+  ids.forEach((id,i)=>{const[w,h]=sz[i],need=row?row.w+G+w:w;
+    if(!row||need>maxW){row={w:0,h:0,items:[]};rows.push(row)}
+    const x=row.items.length?row.w+G:0;row.items.push([id,x]);row.w=x+w;row.h=Math.max(row.h,h)});
+  const W=Math.max(...rows.map(r=>r.w)),pos={};let y=0;
+  rows.forEach(r=>{const off=(W-r.w)/2;r.items.forEach(([id,x])=>pos[id]=[off+x,y]);y+=r.h+G});
+  return{w:W,h:y-G,pos};
 }
-// phone: automatic layout, recomputed on every render (no data written)
+const at=(id,x,y)=>{const n=cvEl(id);if(n&&!n.classList.contains('drag')){n.style.left=x+'px';n.style.top=y+'px'}};
+// desktop: groups and loose notes keep their own spots; anything without a spot yet goes into free space
+function desk(b){
+  const W=$('#table').clientWidth,M=14,upd={},R=[],m=members(b),Lg={};
+  const loose=Object.entries(b.scraps).filter(([id,s])=>s&&!s.bin&&!gOf(b,s)&&cvEl(id));
+  loose.forEach(([id,s])=>{if(s.x!=null){const n=cvEl(id);R.push({x:s.x,y:s.y,w:n.offsetWidth,h:n.offsetHeight})}});
+  const rect=(g,x,y)=>({x:x-PAD,y:y-PAD-22,w:Lg[g].w+2*PAD,h:Lg[g].h+2*PAD+22});
+  const setG=(g,x,y)=>{b.groups[g].x=x;b.groups[g].y=y;upd['groups.'+g+'.x']=x;upd['groups.'+g+'.y']=y};
+  const pending=[];
+  for(const g in m){Lg[g]=lay(m[g]);const G=b.groups[g];
+    if(G.x==null){const ps=m[g].map(i=>b.scraps[i]).filter(s=>s.x!=null); // older groups: start where their notes were
+      if(ps.length)setG(g,Math.round(Math.min(...ps.map(s=>s.x))),Math.round(Math.min(...ps.map(s=>s.y))))}
+    G.x!=null?R.push(rect(g,G.x,G.y)):pending.push(g)}
+  const clear=(x,y,w,h)=>!R.some(r=>x<r.x+r.w+M&&x+w+M>r.x&&y<r.y+r.h+M&&y+h+M>r.y);
+  const top=$('#table').scrollTop;
+  const free=(w,h)=>{for(let y=Math.max(16,top);;y+=16)for(let x=16;x===16||x+w<=W-16;x+=16)if(clear(x,y,w,h))return[x,y]};
+  pending.forEach(g=>{const r=rect(g,0,0),[X,Y]=free(r.w,r.h);setG(g,X+PAD,Y+PAD+22);R.push(rect(g,X+PAD,Y+PAD+22))});
+  for(const g in m){const{x,y}=b.groups[g];m[g].forEach(id=>at(id,x+Lg[g].pos[id][0],y+Lg[g].pos[id][1]))}
+  loose.forEach(([id,s])=>{if(s.x!=null)return;const n=cvEl(id),w=n.offsetWidth,h=n.offsetHeight,[x,y]=free(w,h);
+    R.push({x,y,w,h});at(id,x,y);b.scraps[id]={...s,x,y};upd['scraps.'+id+'.x']=x;upd['scraps.'+id+'.y']=y});
+  if(Object.keys(upd).length)updateDoc(ref(cur),upd);
+}
+// phone: everything laid out automatically (groups as centred blocks, loose notes in rows), in desktop reading order
 function flow(b){
-  const W=$('#table').clientWidth,L=14,G=10,rank=s=>[s.y??1e9,s.x??0,s.ts??0];
-  const list=Object.entries(b.scraps).filter(([id,s])=>s&&!s.bin&&cvEl(id))
-    .sort((a,c)=>{const A=rank(a[1]),C=rank(c[1]);return A[0]-C[0]||A[1]-C[1]||A[2]-C[2]});
-  const units=[],gm={};
-  list.forEach(([id,s])=>{const g=gOf(b,s);if(!g)return units.push({id});if(!gm[g]){gm[g]=[];units.push({ids:gm[g]})}gm[g].push(id)});
-  const put_=(id,x,y)=>{const n=cvEl(id);if(n.classList.contains('drag'))return;n.style.left=x+'px';n.style.top=y+'px'};
+  const W=$('#table').clientWidth,L=14,G=10,m=members(b),units=[];
+  Object.entries(b.scraps).forEach(([id,s])=>{if(s&&!s.bin&&!gOf(b,s)&&cvEl(id))units.push({id,k:[s.y??1e9,s.x??0,s.ts??0]})});
+  for(const g in m){const gr=b.groups[g];units.push({g,k:[gr.y??Math.min(...m[g].map(i=>b.scraps[i].y??1e9)),gr.x??0,0]})}
+  units.sort((a,c)=>a.k[0]-c.k[0]||a.k[1]-c.k[1]||a.k[2]-c.k[2]);
   let x=L,y=16,rh=0;
   units.forEach(u=>{
-    if(u.id){const n=cvEl(u.id),w=n.offsetWidth;if(x>L&&x+w>W-L){x=L;y+=rh+G;rh=0}put_(u.id,x,y);x+=w+G;rh=Math.max(rh,n.offsetHeight);return}
+    if(u.id){const n=cvEl(u.id),w=n.offsetWidth;if(x>L&&x+w>W-L){x=L;y+=rh+G;rh=0}at(u.id,x,y);x+=w+G;rh=Math.max(rh,n.offsetHeight);return}
     if(x>L){y+=rh+G;x=L;rh=0}
-    y+=26;const x0=L+PAD,xr=W-L-PAD;let cx=x0,cy=y+PAD,r=0;
-    u.ids.forEach(id=>{const n=cvEl(id),w=n.offsetWidth;if(cx>x0&&cx+w>xr){cx=x0;cy+=r+G;r=0}put_(id,cx,cy);cx+=w+G;r=Math.max(r,n.offsetHeight)});
-    y=cy+r+PAD+G+6;x=L;rh=0});
+    const avail=W-2*L-2*PAD,l=lay(m[u.g],avail),x0=L+PAD+Math.max(0,(avail-l.w)/2);y+=26;
+    m[u.g].forEach(id=>at(id,x0+l.pos[id][0],y+PAD+l.pos[id][1]));
+    y+=l.h+2*PAD+G+6;x=L;rh=0});
 }
 
 let tabsSig='';
@@ -290,7 +295,7 @@ function render(){
   // update notes in place (never rebuild): a note under your finger/mouse or being typed in stays put
   cv.querySelectorAll('.s').forEach(n=>{if(!shown.has(n.dataset.id))n.remove()});
   shown.forEach((s,id)=>{let d=cvEl(id);if(!d){d=el(id);cv.append(d)}upd(d,id,s)});
-  if(!showBin)(mob()?flow:pack)(b);
+  if(!showBin)(mob()?flow:desk)(b);
   groups(b,cv);
   const bot=Math.max(0,...[...cv.children].map(n=>n.offsetTop+n.offsetHeight));
   cv.style.height=Math.max($('#table').clientHeight,bot+(mob()?120:260))+'px';
@@ -353,8 +358,9 @@ function gEl(gid){
     if(e.pointerType==='mouse')e.preventDefault();
     drag(e,{cap:()=>nm.blur(),tap:()=>e.target===nm&&nm.focus(),
       move:(dx,dy)=>{g.style.left=L+dx+'px';g.style.top=T+dy+'px';ids.forEach(i=>{const n=cvEl(i);if(n){n.style.left=ox[i][0]+dx+'px';n.style.top=ox[i][1]+dy+'px'}})},
-      end:(dx,dy)=>{const cl=Math.max(dx,...ids.map(i=>-ox[i][0])),ct=Math.max(dy,...ids.map(i=>-ox[i][1]));
-        commit(ids.filter(i=>B().scraps[i]).map(i=>[i,{...B().scraps[i],x:Math.round(ox[i][0]+cl),y:Math.round(ox[i][1]+ct)}]));render()}});
+      end:(dx,dy)=>{const G=B().groups?.[gid];if(!G)return render();
+        const nx=Math.round(Math.max(PAD,(G.x??0)+dx)),ny=Math.round(Math.max(PAD+22,(G.y??0)+dy));G.x=nx;G.y=ny;
+        updateDoc(ref(cur),{['groups.'+gid+'.x']:nx,['groups.'+gid+'.y']:ny});render()}});
   };
   return g;
 }
@@ -386,22 +392,28 @@ function el(id){
   return d;
 }
 const noPos=o=>{const c={...o};delete c.x;delete c.y;return c};
+// a group's notes in order, with `id` slotted in nearest to the drop point
+function insertAt(b,gid,id,cx,cy){
+  const sib=(members(b)[gid]||[]).filter(i=>i!==id);let idx=sib.length,best=1e18;
+  sib.forEach((i,k)=>{const n=cvEl(i),mx=n.offsetLeft+n.offsetWidth/2,my=n.offsetTop+n.offsetHeight/2,dd=Math.hypot(cx-mx,(cy-my)*2);
+    if(dd<best){best=dd;idx=cx<mx?k:k+1}});
+  sib.splice(idx,0,id);return sib;
+}
 function drop(id,d,dx,dy,ox,oy){
   const b=B(),s=b.scraps[id];if(!s)return render();
-  const M=mob(),nx=Math.max(0,ox+dx),ny=Math.max(0,oy+dy),h=s.bin?null:hit(d);
-  if(h&&b.scraps[h.dataset.id]){ // dropped onto a note: join its group, or start a new one
-    const tid=h.dataset.id,t=b.scraps[tid],ch=[];let gid=gOf(b,t);
-    if(!gid){gid=uid8();b.groups??={};b.groups[gid]={name:''};updateDoc(ref(cur),{['groups.'+gid]:{name:''}});ch.push([tid,{...t,g:gid}]);b.scraps[tid]={...t,g:gid}}
-    if(gOf(b,s)===gid){ // same group: swap places with that note (both devices follow)
-      ch.push([id,{...s,x:t.x,y:t.y}],[tid,{...t,x:s.x,y:s.y}])}
-    else ch.push([id,noPos({...s,g:gid})]); // the desktop seats it in the snuggest spot by the group
-    if(ch.length)commit(ch);
-  }else{ // otherwise: is its centre inside a group's outline?
-    const cx=nx+d.offsetWidth/2,cy=ny+d.offsetHeight/2;let g=null;
-    if(!s.bin)Object.keys(b.groups||{}).forEach(gid=>{const bb=gbox(gid,id);if(bb&&cx>bb.x1-PAD&&cx<bb.x2+PAD&&cy>bb.y1-PAD&&cy<bb.y2+PAD)g=gid});
-    if(M){if(gOf(b,s)!==g)commit([[id,noPos({...s,g})]])}
-    else commit([[id,{...s,x:Math.round(nx),y:Math.round(ny),g}]]);
-  }
+  const M=mob(),nx=Math.max(0,ox+dx),ny=Math.max(0,oy+dy),cx=nx+d.offsetWidth/2,cy=ny+d.offsetHeight/2,h=s.bin?null:hit(d);
+  let g=null;
+  if(!s.bin){if(h&&b.scraps[h.dataset.id])g=gOf(b,b.scraps[h.dataset.id])||'new';
+    else Object.keys(b.groups||{}).forEach(gid=>{const bb=gbox(gid,id);if(bb&&cx>bb.x1-PAD&&cx<bb.x2+PAD&&cy>bb.y1-PAD&&cy<bb.y2+PAD)g=gid})}
+  if(g==='new'){ // dropped onto a loose note: start a group where that note is
+    const tid=h.dataset.id,t=b.scraps[tid],gid=uid8(),gd={name:''};
+    if(t.x!=null){gd.x=Math.round(t.x);gd.y=Math.round(t.y)}
+    b.groups??={};b.groups[gid]={...gd};updateDoc(ref(cur),{['groups.'+gid]:gd});
+    const order=cx<h.offsetLeft+h.offsetWidth/2?[id,tid]:[tid,id];
+    commit(order.map((i,k)=>[i,{...b.scraps[i],g:gid,o:k}]));
+  }else if(g)commit(insertAt(b,g,id,cx,cy).map((i,k)=>[i,{...b.scraps[i],g,o:k}])); // join or re-order
+  else if(M){if(gOf(b,s))commit([[id,noPos({...s,g:null})]])} // phone: dragged out of its group
+  else commit([[id,{...s,x:Math.round(nx),y:Math.round(ny),g:null}]]);
   render();
 }
 function hit(d){const r=d.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;
